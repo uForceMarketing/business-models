@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Актуальные бизнес-модели</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root { --purple:#7D63EC; --bgLight:#EFE9FF; --ink:#1b1340; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bgLight); overflow:hidden; }
+  body { font-family:'Montserrat', system-ui, sans-serif; user-select:none; -webkit-user-select:none; }
+  body.idle { cursor:none; }
+
+  #deck { position:fixed; inset:0; }
+  .slide {
+    position:absolute; left:50%; top:50%;
+    transform-origin:0 0;
+    overflow:hidden; isolation:isolate;
+    background-size:100% 100%; background-repeat:no-repeat;
+    opacity:0; visibility:hidden;
+    transition:opacity .55s ease, visibility 0s linear .55s;
+  }
+  .slide.active { opacity:1; visibility:visible; transition:opacity .55s ease, visibility 0s; z-index:2; }
+  .slide .inner { position:absolute; inset:0; transition:transform .9s cubic-bezier(.2,.7,.2,1); transform:scale(1.015); }
+  .slide.active .inner { transform:scale(1); }
+  .slide .inner { background-size:100% 100%; background-repeat:no-repeat; }
+
+  .ly { position:absolute; display:block; pointer-events:none; will-change:transform, opacity; }
+  .ly.blend { transform-origin:0 0; object-fit:cover; }
+
+  /* появление элементов */
+  .slide .ly.enter { opacity:0; transform:translateY(22px); }
+  .slide .ly.enter.fade { transform:none; }
+  .slide:is(.active,.leaving) .ly.enter { animation:enterUp .75s cubic-bezier(.2,.7,.2,1) forwards; animation-delay:var(--d,0s); }
+  .slide:is(.active,.leaving) .ly.enter.fade { animation-name:enterFade; animation-duration:1.2s; }
+  @keyframes enterUp { from { opacity:0; transform:translateY(22px); } to { opacity:1; transform:none; } }
+  @keyframes enterFade { from { opacity:0; } to { opacity:var(--op,1); } }
+
+  /* лёгкое «дыхание» элементов: отдельные свойства translate/rotate, не конфликтуют с transform */
+  .slide:is(.active,.leaving) .ly.float { animation-name:enterUp, floatY; animation-duration:.75s, var(--fd,7s);
+    animation-delay:var(--d,0s), var(--fdel,0s); animation-timing-function:cubic-bezier(.2,.7,.2,1), ease-in-out;
+    animation-iteration-count:1, infinite; animation-fill-mode:forwards, none; animation-direction:normal, alternate; }
+  @keyframes floatY { from { translate:0 calc(var(--amp,8px) * -1); rotate:calc(var(--rot,1deg) * -1); } to { translate:0 var(--amp,8px); rotate:var(--rot,1deg); } }
+
+  .slide:is(.active,.leaving) .ly.drift { animation-name:enterFade, drift; animation-duration:1.2s, var(--fd,16s);
+    animation-delay:var(--d,0s), var(--fdel,0s); animation-timing-function:ease, ease-in-out;
+    animation-iteration-count:1, infinite; animation-fill-mode:forwards, none; animation-direction:normal, alternate; }
+  @keyframes drift { 0% { translate:0 0; } 50% { translate:var(--dx,24px) var(--dy,-16px); } 100% { translate:calc(var(--dx,24px) * -.6) var(--dy2,14px); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .slide.active .ly.float, .slide:is(.active,.leaving) .ly.drift { animation-iteration-count:1, 0 !important; }
+  }
+
+  /* HUD */
+  #hud { position:fixed; right:18px; bottom:14px; z-index:10; display:flex; gap:10px; align-items:center;
+    font:600 13px/1 'Montserrat',sans-serif; color:rgba(255,255,255,.85); opacity:0; transition:opacity .4s; pointer-events:none; }
+  body.show-hud #hud { opacity:1; }
+  #hud .pill { background:rgba(20,14,48,.55); backdrop-filter:blur(6px); padding:8px 12px; border-radius:999px; }
+  #bar { position:fixed; left:0; bottom:0; height:3px; background:var(--purple); z-index:10; transition:width .5s ease; opacity:.0; }
+  body.show-hud #bar { opacity:.9; }
+
+  /* Кубик Рубика */
+  .rubik-wrap { position:absolute; left:0; top:0; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:36px; pointer-events:none; }
+  .rubik-scene { width:560px; height:560px; perspective:2200px; pointer-events:auto; cursor:grab; touch-action:none; display:flex; align-items:center; justify-content:center; }
+  .rubik-scene:active { cursor:grabbing; }
+  .rubik { position:relative; width:0; height:0; transform-style:preserve-3d; }
+  .cubie { position:absolute; left:0; top:0; width:0; height:0; transform-style:preserve-3d; }
+  .face { position:absolute; width:var(--S); height:var(--S); left:calc(var(--S) / -2); top:calc(var(--S) / -2);
+    background:#1a1238; border-radius:14px; backface-visibility:hidden; }
+  .face.st::after { content:''; position:absolute; inset:7px; border-radius:11px; background:var(--c);
+    box-shadow:inset 0 -10px 18px rgba(0,0,0,.14), inset 0 8px 14px rgba(255,255,255,.28); }
+  .rubik-controls { display:flex; gap:20px; pointer-events:auto; }
+  .rubik-btn { font:600 26px/1 'Montserrat',sans-serif; color:var(--purple); background:#fff; border:0; border-radius:999px;
+    padding:20px 40px; cursor:pointer; box-shadow:0 12px 32px rgba(125,99,236,.22); transition:transform .2s, box-shadow .2s; }
+  .rubik-btn:hover { transform:translateY(-3px); box-shadow:0 16px 40px rgba(125,99,236,.32); }
+  .rubik-btn:disabled { opacity:.55; cursor:default; transform:none; }
+  .rubik-btn.primary { background:var(--purple); color:#fff; }
+  .rubik-phrase-slot { height:120px; display:flex; align-items:center; justify-content:center; margin-bottom:-10px; pointer-events:none; }
+  .rubik-phrase { font:600 48px/1.15 'Montserrat',sans-serif; color:var(--purple); background:#fff; border-radius:999px;
+    padding:26px 56px; max-width:1500px; text-align:center; box-shadow:0 16px 44px rgba(125,99,236,.25);
+    opacity:0; transform:translateY(16px) scale(.92); transition:opacity .35s ease, transform .5s cubic-bezier(.2,1.4,.4,1); }
+  .rubik-phrase.show { opacity:1; transform:none; }
+  .rubik-phrase.idle { font-size:30px; font-weight:500; color:rgba(27,19,64,.6); background:rgba(255,255,255,.55); box-shadow:none; padding:20px 40px; }
+  .rubik-hint { font:500 18px/1 'Montserrat',sans-serif; color:rgba(27,19,64,.55); margin-top:-26px; }
+
+  /* Слайд «Коты строят дом» */
+  .cats-part { position:absolute; background-repeat:no-repeat; will-change:transform;
+    -webkit-mask-image:radial-gradient(ellipse closest-side, #000 72%, transparent 100%); mask-image:radial-gradient(ellipse closest-side, #000 72%, transparent 100%); }
+  .slide:is(.active,.leaving) .cats-part { animation:var(--an) var(--dur) ease-in-out var(--del,0s) infinite; }
+  @keyframes catBob { 0%,100% { transform:translateY(0) rotate(0); } 50% { transform:translateY(calc(var(--a,3px) * -1)) rotate(var(--r,0deg)); } }
+  @keyframes catSway { 0%,100% { transform:rotate(calc(var(--r,2deg) * -1)); } 50% { transform:rotate(var(--r,2deg)) translateY(calc(var(--a,2px) * -1)); } }
+  @keyframes catPush { 0%,100% { transform:translate(0,0); } 50% { transform:translate(var(--px,8px), var(--py,-4px)); } }
+  @keyframes catWave { 0%,100% { transform:rotate(calc(var(--r,12deg) * -1)); } 50% { transform:rotate(var(--r,12deg)); } }
+  @keyframes catHammer { 0% { transform:rotate(-13deg); } 42% { transform:rotate(7deg); } 50% { transform:rotate(4deg); } 58% { transform:rotate(7deg); } 100% { transform:rotate(-13deg); } }
+  @keyframes catWalk { 0%,100% { transform:translateY(0) rotate(-1.2deg); } 25% { transform:translateY(-6px) rotate(0deg); } 50% { transform:translateY(0) rotate(1.2deg); } 75% { transform:translateY(-6px) rotate(0deg); } }
+
+  .mc-brick { position:absolute; width:96px; height:56px; left:0; top:0; }
+  .mc-brick i { position:absolute; inset:0; border-radius:3px; background:url("assets/mc-brick.webp") center / cover;
+    box-shadow:inset 0 5px 0 rgba(255,255,255,.28), inset 0 -6px 0 rgba(70,30,80,.3), 0 10px 18px rgba(70,30,90,.35); }
+  .mc-fly { position:absolute; left:0; top:0; opacity:0; }
+  .slide:is(.active,.leaving) .mc-fly { animation:mcFlyX var(--dur,4.2s) linear var(--del,0s) infinite; }
+  .slide:is(.active,.leaving) .mc-fly .mc-brick { animation:mcFlyY var(--dur,4.2s) linear var(--del,0s) infinite; }
+  @keyframes mcFlyX { 0%,14% { transform:translateX(var(--x0)); opacity:0; } 17% { opacity:1; } 52% { transform:translateX(var(--x1)); } 84% { transform:translateX(var(--x1)); opacity:1; } 94%,100% { transform:translateX(var(--x1)); opacity:0; } }
+  @keyframes mcFlyY { 0%,14% { transform:translateY(var(--y0)) rotate(0); animation-timing-function:ease-out; } 33% { transform:translateY(var(--yt)) rotate(-8deg); animation-timing-function:ease-in; } 52% { transform:translateY(var(--y1)) rotate(0); } 55% { transform:translateY(calc(var(--y1) - 8px)); } 58%,100% { transform:translateY(var(--y1)); } }
+  .mc-dust { position:absolute; width:12px; height:12px; background:#f4ecff; border-radius:2px; opacity:0; }
+  .slide:is(.active,.leaving) .mc-dust { animation:mcDust var(--dur,4.2s) ease-out var(--del,0s) infinite; }
+  @keyframes mcDust { 0%,51% { opacity:0; transform:translate(0,0) scale(.6); } 53% { opacity:.9; } 70%,100% { opacity:0; transform:translate(var(--dx), var(--dy)) scale(1.1); } }
+
+  .mc-petal { position:absolute; left:0; top:0; width:12px; height:12px; border-radius:2px; opacity:0; }
+  .slide:is(.active,.leaving) .mc-petal { animation:mcPetal var(--dur) linear var(--del) infinite; }
+  @keyframes mcPetal { 0% { opacity:0; transform:translate(var(--x0), var(--y0)) rotate(0); } 10% { opacity:.95; } 85% { opacity:.9; } 100% { opacity:0; transform:translate(var(--x1), var(--y1)) rotate(var(--rot)); } }
+
+  .mc-glow { position:absolute; border-radius:50%; mix-blend-mode:screen; pointer-events:none;
+    background:radial-gradient(circle, rgba(255,214,140,.75), rgba(255,170,90,.25) 45%, transparent 70%); }
+  .slide:is(.active,.leaving) .mc-glow { animation:mcFlicker var(--dur,2.6s) steps(1) var(--del,0s) infinite, mcBreath 3.4s ease-in-out infinite; }
+  @keyframes mcFlicker { 0% { opacity:.85; } 17% { opacity:.6; } 23% { opacity:.95; } 51% { opacity:.7; } 63% { opacity:1; } 80% { opacity:.75; } }
+  @keyframes mcBreath { 0%,100% { transform:scale(1); } 50% { transform:scale(1.08); } }
+  .mc-spark { position:absolute; width:6px; height:6px; background:#fff6d8; box-shadow:0 0 8px 2px rgba(255,236,170,.8); opacity:0; }
+  .slide:is(.active,.leaving) .mc-spark { animation:mcTwinkle var(--dur) ease-in-out var(--del) infinite; }
+  @keyframes mcTwinkle { 0%,100% { opacity:0; transform:scale(.5); } 50% { opacity:1; transform:scale(1); } }
+  @media (prefers-reduced-motion: reduce) { .slide .cats-part, .slide .mc-fly, .slide .mc-fly .mc-brick, .slide .mc-petal, .slide .mc-spark, .slide .mc-dust { animation:none !important; } }
+
+  @keyframes catHover { 0%,100% { transform:translateY(0) rotate(-1deg); } 50% { transform:translateY(calc(var(--a,10px) * -1)) rotate(1deg); } }
+  .mc-floater { position:absolute; }
+  .mc-floater .mc-brick i { border-radius:4px; }
+  .slide:is(.active,.leaving) .mc-floater { animation:mcHover var(--dur,4s) ease-in-out var(--del,0s) infinite; }
+  @keyframes mcHover { 0%,100% { transform:translateY(0) rotate(calc(var(--rot,8deg) * -1)); } 50% { transform:translateY(-16px) rotate(var(--rot,8deg)); } }
+  .mc-led { position:absolute; width:5px; height:5px; background:#9fd0ff; box-shadow:0 0 8px 2px rgba(120,180,255,.9); opacity:.2; }
+  .slide:is(.active,.leaving) .mc-led { animation:mcLed var(--dur,1s) steps(1) var(--del,0s) infinite; }
+  @keyframes mcLed { 0% { opacity:1; } 40% { opacity:.2; } 70% { opacity:.9; } }
+  .mc-steam { position:absolute; width:26px; height:60px; border-radius:50%; background:radial-gradient(ellipse, rgba(255,255,255,.75), transparent 70%); filter:blur(4px); opacity:0; }
+  .slide:is(.active,.leaving) .mc-steam { animation:mcSteam 3.3s ease-out var(--del,0s) infinite; }
+  @keyframes mcSteam { 0% { opacity:0; transform:translate(0,20px) scale(.6); } 25% { opacity:.8; } 100% { opacity:0; transform:translate(14px,-110px) scale(1.5); } }
+  @media (prefers-reduced-motion: reduce) { .slide .mc-floater, .slide .mc-led, .slide .mc-steam { animation:none !important; } }
+</style>
+</head>
+<body>
+<div id="deck"></div>
+<div id="bar"></div>
+<div id="hud"><span class="pill" id="counter">1 / 1</span><span class="pill">F: полный экран</span></div>
+
+<script>
+const SLIDES = [{"id": "349:703", "name": "01 · Обложка", "w": 1920, "h": 1080, "bg": "assets/s00-bg.webp", "items": [{"t": "img", "src": "assets/s00-00.webp", "kind": "other", "name": "Union", "x": 52, "y": 32, "w": 1816, "h": 1016}, {"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.43, "w": 1690.3299560546875, "h": 1388.0537109375, "m": [0.2452031522989273, -0.9694716930389404, 0.9694716930389404, 0.2452031522989273, -286, 1194.72705078125], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s00-02.webp", "kind": "shape", "name": "Rectangle 2", "x": 1758, "y": 32, "w": 110, "h": 110}, {"t": "img", "src": "assets/s00-03.webp", "kind": "shape", "name": "Rectangle 3", "x": 523, "y": 32, "w": 1212, "h": 110}, {"t": "img", "src": "assets/s00-04.webp", "kind": "image", "name": "Frame 1", "x": 0, "y": 0, "w": 1920, "h": 1080}, {"t": "img", "src": "assets/s00-05.webp", "kind": "image", "name": "ChatGPT Image 23 сент. 2026 г., 08_05_24 1", "x": 0, "y": 0, "w": 1920, "h": 1080}, {"t": "img", "src": "assets/s00-06.webp", "kind": "card", "name": "Frame 15", "x": 562, "y": 50, "w": 1116, "h": 74}, {"t": "img", "src": "assets/s00-07.webp", "kind": "text", "name": "У вас может быть одна идея, но разные бизнес-модели дадут разный результат", "x": 241.09, "y": 433.27, "w": 692.02, "h": 170.42}, {"t": "img", "src": "assets/s00-08.webp", "kind": "text", "name": "Актуальные бизнес-модели", "x": 173.93, "y": 214.41, "w": 840.14, "h": 238.95}]}, {"id": "360:2", "name": "20260749", "w": 1920, "h": 1080, "bg": "assets/s01-bg.webp", "items": [{"t": "img", "src": "assets/s01-00.webp", "kind": "image", "name": "Frame 17", "x": 0, "y": 0, "w": 1920, "h": 1080}, {"t": "img", "src": "assets/s01-01.webp", "kind": "image", "name": "ChatGPT Image 23 сент. 2026 г., 12_56_08 1", "x": 0, "y": 264, "w": 606, "h": 816}, {"t": "img", "src": "assets/s01-02.webp", "kind": "text", "name": "Денис Сметнёв", "x": 101.01, "y": 79.79, "w": 592.27, "h": 63.94}, {"t": "img", "src": "assets/s01-03.webp", "kind": "image", "name": "сооснователь", "x": 0, "y": 168, "w": 1347, "h": 61.77}, {"t": "img", "src": "assets/s01-04.webp", "kind": "card", "name": "Frame 2087329100", "x": 559, "y": 285, "w": 1023, "h": 389}, {"t": "img", "src": "assets/s01-05.webp", "kind": "card", "name": "Frame 2087329101", "x": 559, "y": 651, "w": 1019, "h": 367}, {"t": "img", "src": "assets/s01-06.webp", "kind": "image", "name": "0_0__7_-removebg-preview 1", "x": 1220, "y": 133, "w": 321.28, "h": 370.04}, {"t": "img", "src": "assets/s01-07.webp", "kind": "image", "name": "Снимок_экрана_2026-02-11_235533-removebg-preview 2", "x": 1560, "y": 20, "w": 360, "h": 469}]}, {"id": "362:40", "name": "20260750", "w": 1920, "h": 1080, "bg": "assets/s02-bg.webp", "items": [{"t": "img", "src": "assets/s02-00.webp", "kind": "image", "name": "Frame 17", "x": 0, "y": 0, "w": 1920, "h": 1080}, {"t": "img", "src": "assets/s02-01.webp", "kind": "image", "name": "ChatGPT Image 23 сент. 2026 г., 07_33_01 1", "x": 0, "y": 0, "w": 1920, "h": 1080}, {"t": "img", "src": "assets/s02-02.webp", "kind": "text", "name": "После обеда 🥪🥪🥪 принимать бизнес-решения опасно", "x": 390.31, "y": 58.04, "w": 1177.66, "h": 166.93}, {"t": "img", "src": "assets/s02-03.webp", "kind": "image", "name": "ChatGPT Image 23 сент. 2026 г., 07_44_22 1", "x": 1297, "y": 202, "w": 577, "h": 412}, {"t": "img", "src": "assets/s02-04.webp", "kind": "vector", "name": "Vector 5", "x": 1290.69, "y": 238.45, "w": 349.97, "h": 125.55}, {"t": "img", "src": "assets/s02-05.webp", "kind": "vector", "name": "Vector 6", "x": 1329.47, "y": 340.48, "w": 510.6, "h": 299.9}, {"t": "img", "src": "assets/s02-06.webp", "kind": "vector", "name": "Vector 7", "x": 1699.24, "y": 363.92, "w": 162.47, "h": 222.47}, {"t": "img", "src": "assets/s02-07.webp", "kind": "vector", "name": "Vector 8", "x": 1590.14, "y": 140.07, "w": 307.26, "h": 143.91}, {"t": "img", "src": "assets/s02-08.webp", "kind": "vector", "name": "Vector 9", "x": 1791.76, "y": 239.67, "w": 35.24, "h": 28.07}, {"t": "img", "src": "assets/s02-09.webp", "kind": "vector", "name": "Vector 10", "x": 1326.5, "y": 664.22, "w": 506.95, "h": 318.42}, {"t": "img", "src": "assets/s02-10.webp", "kind": "vector", "name": "Vector 11", "x": 1339.61, "y": 756.54, "w": 493.68, "h": 90.18}, {"t": "img", "src": "assets/s02-11.webp", "kind": "vector", "name": "Vector 12", "x": 1534.84, "y": 749.3, "w": 100.94, "h": 88.51}, {"t": "img", "src": "assets/s02-12.webp", "kind": "vector", "name": "Vector 13", "x": 1496.83, "y": 610.17, "w": 147.24, "h": 95.74}, {"t": "img", "src": "assets/s02-13.webp", "kind": "vector", "name": "Vector 14", "x": 1336.81, "y": 800.15, "w": 72.55, "h": 157.92}, {"t": "img", "src": "assets/s02-14.webp", "kind": "vector", "name": "Vector 15", "x": 1363.81, "y": 921.02, "w": 437.49, "h": 69.61}]}, {"id": "349:25", "name": "02 · Из чего состоит бизнес-модель", "w": 1920, "h": 1080, "bg": "assets/s03-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [0.8638178110122681, -0.5038042664527893, 0.5038042664527893, 0.8638178110122681, 5.119813400273829e-14, -836.12890625], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s03-01.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 620, "w": 480, "h": 460}, {"t": "img", "src": "assets/s03-02.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}, {"t": "img", "src": "assets/s03-03.webp", "kind": "text", "name": "Сразу в суть. Из чего состоит бизнес-модель", "x": 104.39, "y": 78.35, "w": 1732.78, "h": 69.12}, {"t": "img", "src": "assets/s03-04.webp", "kind": "card", "name": "Frame", "x": 68, "y": 174, "w": 366, "h": 543}, {"t": "img", "src": "assets/s03-05.webp", "kind": "card", "name": "Frame", "x": 370, "y": 174, "w": 366, "h": 304}, {"t": "img", "src": "assets/s03-06.webp", "kind": "card", "name": "Frame", "x": 370, "y": 414, "w": 366, "h": 303}, {"t": "img", "src": "assets/s03-07.webp", "kind": "card", "name": "Frame", "x": 672, "y": 174, "w": 577, "h": 543}, {"t": "img", "src": "assets/s03-08.webp", "kind": "card", "name": "Frame", "x": 1185, "y": 174, "w": 366, "h": 304}, {"t": "img", "src": "assets/s03-09.webp", "kind": "card", "name": "Frame", "x": 1185, "y": 414, "w": 366, "h": 303}, {"t": "img", "src": "assets/s03-10.webp", "kind": "card", "name": "Frame", "x": 1487, "y": 174, "w": 366, "h": 543}, {"t": "img", "src": "assets/s03-11.webp", "kind": "card", "name": "Frame", "x": 68, "y": 669, "w": 752, "h": 342}, {"t": "img", "src": "assets/s03-12.webp", "kind": "card", "name": "Frame", "x": 756, "y": 669, "w": 1096, "h": 342}, {"t": "img", "src": "assets/s03-13.webp", "kind": "image", "name": "ChatGPT Image 23 сент. 2026 г., 07_51_39 1", "x": 1621, "y": 394, "w": 299, "h": 634}, {"t": "img", "src": "assets/s03-14.webp", "kind": "other", "name": "Frame 2087329103", "x": 1740.88, "y": 473.03, "w": 53.17, "h": 55.04}, {"t": "img", "src": "assets/s03-15.webp", "kind": "other", "name": "Frame 2087329104", "x": 1860.13, "y": 563.68, "w": 25.89, "h": 26.8}, {"t": "img", "src": "assets/s03-16.webp", "kind": "other", "name": "Frame 2087329105", "x": 1887.13, "y": 638.68, "w": 25.89, "h": 26.8}, {"t": "img", "src": "assets/s03-17.webp", "kind": "other", "name": "Frame 2087329107", "x": 1810.96, "y": 716.18, "w": 56.65, "h": 58.64}, {"t": "img", "src": "assets/s03-18.webp", "kind": "other", "name": "Frame 2087329106", "x": 1661.96, "y": 569.18, "w": 56.65, "h": 58.64}]}, {"id": "362:81", "name": "02 · Из чего состоит бизнес-модель", "w": 1920, "h": 1080, "bg": "assets/s04-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [0.8638178110122681, -0.5038042664527893, 0.5038042664527893, 0.8638178110122681, 0, -836.12890625], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s04-01.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 620, "w": 480, "h": 460}, {"t": "img", "src": "assets/s04-02.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}, {"t": "img", "src": "assets/s04-03.webp", "kind": "text", "name": "Са-а-амые необычные бизнес-модели", "x": 108.5, "y": 487.69, "w": 1077.53, "h": 187.02}, {"t": "img", "src": "assets/s04-04.webp", "kind": "image", "name": "загрузка (38) 1", "x": 1200, "y": 258, "w": 632, "h": 540}, {"t": "img", "src": "assets/s04-05.webp", "kind": "text", "name": "здесь собрались прокачанные ребята, поэтому сразу поговорим про", "x": 282.72, "y": 399.71, "w": 675.6, "h": 68.72}, {"t": "img", "src": "assets/s04-06.webp", "kind": "other", "name": "Group 2087329567", "x": 1356.46, "y": 310.03, "w": 35.74, "h": 34.97}, {"t": "img", "src": "assets/s04-07.webp", "kind": "other", "name": "Group 2087329570", "x": 1432.58, "y": 317.75, "w": 35.09, "h": 36.08}, {"t": "img", "src": "assets/s04-08.webp", "kind": "other", "name": "Group 2087329569", "x": 1535, "y": 333, "w": 22.74, "h": 22.97}, {"t": "img", "src": "assets/s04-09.webp", "kind": "other", "name": "Group 2087329568", "x": 1632.08, "y": 313.27, "w": 25.99, "h": 29.78}, {"t": "img", "src": "assets/s04-10.webp", "kind": "vector", "name": "Vector 65", "x": 1470.56, "y": 292.59, "w": 24.45, "h": 31.74}, {"t": "img", "src": "assets/s04-11.webp", "kind": "vector", "name": "Vector 66", "x": 1484.33, "y": 292.93, "w": 21.33, "h": 28.73}]}, {"id": "349:70", "name": "03 · Costco", "w": 1920, "h": 1080, "bg": "assets/s05-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [-0.5038042664527893, -0.8638178110122681, 0.8638178110122681, -0.5038042664527893, -836.12890625, 0], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s05-01.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 620, "w": 480, "h": 460}, {"t": "img", "src": "assets/s05-02.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}, {"t": "img", "src": "assets/s05-03.webp", "kind": "text", "name": "Costco зарабатывает не на товарах, а на доступе к низким ценам", "x": 102.95, "y": 78.35, "w": 1363, "h": 155.12}, {"t": "img", "src": "assets/s05-04.webp", "kind": "card", "name": "Frame", "x": 68, "y": 582, "w": 1784, "h": 458}, {"t": "img", "src": "assets/s05-05.webp", "kind": "image", "name": "P30Kad-frJXbiyZbW5rBIqeapmgvsycuiWRKfZNw2QiXRV44rDi3X3IOZmBEdKt-NqU19odK0ZcG0c6KYP2f-syMjU4R8C-9BWKtl2octQ1E9DWh5YTgfKDX_TOni-QySDCZsxhEX2LFZtdtQRnRUlqNijOiavGmNiggEmtq8601pwR1rNG9ggi2a9iRfjr6 1", "x": 90, "y": 274, "w": 524, "h": 312}, {"t": "img", "src": "assets/s05-06.webp", "kind": "image", "name": "sH84raVRjJUNvnbOW4bIRVyr5i3mrZ7dX_CEOo4l-voyONLNWbPIGMNKl2FVk9z1jKpWVQc6hE70zoWrwV9ZCeHuF_2azkuwkcDZSoX2E8Esbyw3sBfD4e70EfuSbLXuxPMO4h5cy5qYN_-fWelRIbwpSyOzieccD2pQ3zIbY5QlwQ96SZYWmfKjtZFV0Wla 1", "x": 606, "y": 274, "w": 528, "h": 314}, {"t": "img", "src": "assets/s05-07.webp", "kind": "image", "name": "v1_aiGEGduOm1ZLLhEcl3gi_Cl8Nghqkm8ZdNMb19hkylRPh5CoWPVQXUlkMLeg-2NTxneosmify-r8eGBArc_cssr28_AuG5TCTz1ccnQp7cn63InkxWWxGqRjWP8CnqK--I8Klk6LPNMHnxY06IeNLaH1nxQzSBaOADgNJyogx50Yi2DIBfx7Y6j99jB9A 1", "x": 1126, "y": 274, "w": 528, "h": 314}, {"t": "img", "src": "assets/s05-08.webp", "kind": "image", "name": "ChatGPT Image 22 сент. 2026 г., 23_25_21 1", "x": 0, "y": 0, "w": 1920, "h": 1080}, {"t": "img", "src": "assets/s05-09.webp", "kind": "text", "name": "Costco зарабатывает не на товарах, а на доступе к низким ценам", "x": 43.92, "y": 104.46, "w": 952.27, "h": 201.66}, {"t": "img", "src": "assets/s05-10.webp", "kind": "text", "name": "Как обычно", "x": 123.4, "y": 451.52, "w": 251.91, "h": 30.96}, {"t": "img", "src": "assets/s05-11.webp", "kind": "text", "name": "Costco", "x": 519.56, "y": 453.52, "w": 139.1, "h": 28.96}, {"t": "img", "src": "assets/s05-12.webp", "kind": "text", "name": "Ритейлер зарабатывает на наценке на товары.", "x": 122.23, "y": 504.81, "w": 301.46, "h": 51.85}, {"t": "img", "src": "assets/s05-13.webp", "kind": "text", "name": "Держит наценку около 10–11% и берет деньги за членство.", "x": 518.19, "y": 506.2, "w": 292.1, "h": 74.99}, {"t": "img", "src": "assets/s05-14.webp", "kind": "text", "name": "≈2% выручки", "x": 212.5, "y": 885.64, "w": 209.83, "h": 27.42}, {"t": "img", "src": "assets/s05-15.webp", "kind": "text", "name": "70–75% операционной прибыли", "x": 556.61, "y": 885.64, "w": 209.51, "h": 43.46}]}, {"id": "349:96", "name": "04 · Grameen Bank", "w": 1920, "h": 1080, "bg": "assets/s06-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [-0.8638178110122681, 0.5038042664527893, -0.5038042664527893, -0.8638178110122681, 0, 836.1289672851562], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s06-01.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 620, "w": 480, "h": 460}, {"t": "img", "src": "assets/s06-02.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}, {"t": "img", "src": "assets/s06-03.webp", "kind": "text", "name": "Grameen Bank выдаёт кредиты группам из 5 человек", "x": 103.17, "y": 79.58, "w": 1199.24, "h": 153.9}, {"t": "img", "src": "assets/s06-04.webp", "kind": "card", "name": "Frame", "x": 68, "y": 548, "w": 1784, "h": 492}, {"t": "img", "src": "assets/s06-05.webp", "kind": "image", "name": "7xMp6w1fz8m8v3Kuog_MRu8-l-2oyG9G01ono8a0GTX80BdmyAyNsIMgAmfqZwOEQtmQHEquYw1Y0yd3K9xysbpM4Ui7DR7qL0qjtRRuZ8f0u2r7AH7zxSjrIz9H0OxJkpX-1q1g7JVdQRa8XZrjB1AnKIQ1F2-wMFiDhK22RVcBggdqvZSB4527dLiM4LHr 1", "x": 90, "y": 258, "w": 516, "h": 312}, {"t": "img", "src": "assets/s06-06.webp", "kind": "image", "name": "RWNZoaDOgxWlzxWa46MmMMskVS1qp2tzzdSVKz3URciDr_gmHF8xLvuNInejpf8ablalnFu3LiLYkjA_1jB_SNx0zi84ClJBdIBLAng7-m8dgtq4SHBbMAwG6frgLIVzDvVrkBPMMe_AKoJFcmnMVX0aRVAbSGPzmiguwu-Z6HtOOB-B55HbSXzkYuo7buWX 1", "x": 614, "y": 258, "w": 448, "h": 312}, {"t": "img", "src": "assets/s06-07.webp", "kind": "image", "name": "1xuWJZK6hAA4SoILAPQR_gJc0vIjSIaK381Rlz7E7egoXApte7No24C1TGvb4U1gb0awLvNpY_Tnx7Q1r1DjNRy9UbPNG-c21UueB1DdQ6x_DIMl0vFLqfPTkjXOF4PC0pnyRQh41xLQMAYZBSnUh_PxrdUnjhQFJiN5eTeKMs2t7I4ZLaF_v6uXsjVb2YRp 1", "x": 1064, "y": 258, "w": 424, "h": 297}, {"t": "img", "src": "assets/s06-08.webp", "kind": "image", "name": "ChatGPT Image 22 сент. 2026 г., 23_48_12 1", "x": 0, "y": 0, "w": 1919, "h": 1080}, {"t": "img", "src": "assets/s06-09.webp", "kind": "vector", "name": "Vector 2", "x": 198.46, "y": 0, "w": 1196.65, "h": 366.72}, {"t": "img", "src": "assets/s06-10.webp", "kind": "vector", "name": "Vector 1", "x": 0, "y": 0, "w": 673.16, "h": 389.61}, {"t": "img", "src": "assets/s06-11.webp", "kind": "vector", "name": "Vector 3", "x": 0, "y": 0, "w": 673.16, "h": 396.61}, {"t": "img", "src": "assets/s06-12.webp", "kind": "vector", "name": "Vector 4", "x": 0, "y": 0, "w": 705.16, "h": 449.61}, {"t": "img", "src": "assets/s06-13.webp", "kind": "text", "name": "Grameen Bank выдает кредиты группам из 5 человек", "x": 81.64, "y": 93.48, "w": 999.37, "h": 128.64}, {"t": "img", "src": "assets/s06-14.webp", "kind": "text", "name": "Как обычно", "x": 82.4, "y": 327.52, "w": 251.91, "h": 30.96}, {"t": "img", "src": "assets/s06-15.webp", "kind": "text", "name": "Grameen Bank", "x": 553.56, "y": 328.32, "w": 310.62, "h": 30.16}, {"t": "img", "src": "assets/s06-16.webp", "kind": "text", "name": "Банк оценивает кредитоспособность, требует залог и выдает кредит.", "x": 79.1, "y": 382.2, "w": 294.67, "h": 108.46}, {"t": "img", "src": "assets/s06-17.webp", "kind": "text", "name": "Нет залога. Заемщики объединяются в группы по 5 человек, и ответственность уже коллективная.", "x": 551.62, "y": 382.03, "w": 407.05, "h": 108.77}, {"t": "img", "src": "assets/s06-18.webp", "kind": "text", "name": "Физический залог заменили механизмом взаимной ответственности.", "x": 240.17, "y": 844.68, "w": 675.71, "h": 58.59}]}, {"id": "349:122", "name": "05 · Red Bull", "w": 1920, "h": 1080, "bg": "assets/s07-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [0.9670549035072327, 0.25456804037094116, -0.25456804037094116, 0.9670549035072327, 591.232421875, -591.232421875], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s07-01.webp", "kind": "image", "name": "jBPBUzqJ36KXv0vVpwIucRatHGoib9RPCsEM_IU8_rUIanH-3G9zIq6TAQZYPw0SThpTkAjKKsuFBvx59DVxP47chQab2CqBNQuQa33_dkB-KCjbNJStjzui4x3ExmTIrGKah9KoWCoN0GS4ANts5P4k_ulIWYJNEzKpCXwtR9x_Rf2_jZTzHf2-g6cGY9Nk 1", "x": 86, "y": 310, "w": 494, "h": 295}, {"t": "img", "src": "assets/s07-02.webp", "kind": "image", "name": "jBPBUzqJ36KXv0vVpwIucRatHффGoib9RPCsEM_IU8_rUIanH-3G9zIq6TAQZYPw0SThpTkAjKKsuFBvx59DVxP47chQab2CqBNQuQa33_dkB-KCjbNJStjzui4x3ExmTIrGKah9KoWCoN0GS4ANts5P4k_ulIWYJNEzKpCXwtR9x_Rf2_jZTzHf2-g6cGY9Nk 1", "x": 853, "y": 297, "w": 439, "h": 308}, {"t": "img", "src": "assets/s07-03.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 620, "w": 480, "h": 460}, {"t": "img", "src": "assets/s07-04.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}, {"t": "img", "src": "assets/s07-05.webp", "kind": "card", "name": "Frame", "x": 68, "y": 596, "w": 1784, "h": 444}, {"t": "img", "src": "assets/s07-06.webp", "kind": "image", "name": "ChatGPT Image 23 сент. 2026 г., 00_11_08 1", "x": 0, "y": 0, "w": 1920, "h": 1080}, {"t": "img", "src": "assets/s07-07.webp", "kind": "vector", "name": "Vector 2", "x": 0, "y": 0, "w": 1920, "h": 307.93}, {"t": "img", "src": "assets/s07-08.webp", "kind": "vector", "name": "Vector 4", "x": 0, "y": 0, "w": 1920, "h": 338.03}, {"t": "img", "src": "assets/s07-09.webp", "kind": "vector", "name": "Vector 3", "x": 0, "y": 0, "w": 1888.77, "h": 274.53}, {"t": "img", "src": "assets/s07-10.webp", "kind": "text", "name": "Red Bull не покупает рекламу, а генерит крутые поводы для ее продажи", "x": 85.04, "y": 40.48, "w": 1297.04, "h": 128.58}, {"t": "img", "src": "assets/s07-11.webp", "kind": "image", "name": "7F7kYdSnGTacUU8pH-keCTXCaqeVwhulQUD_CrbqcStJhYlNW_EPbP4MA54yIBxlQD_xszjof1LGbfGV9SDAR-Wa2-A1TIfUCIfVXvGZb1tXknr3YAAMNm-lweUtu5Czfbaiz0p4kN7Ua2xocT1GCKBRLd8ioKFzKVDqB81He5dTJSKwivmnO-9OYgpd-7jz 1", "x": 1573.93, "y": 283.93, "w": 294.55, "h": 376.32}, {"t": "img", "src": "assets/s07-12.webp", "kind": "text", "name": "Как обычно", "x": 158.4, "y": 241.52, "w": 251.91, "h": 30.96}, {"t": "img", "src": "assets/s07-13.webp", "kind": "text", "name": "Grameen Bank", "x": 736.56, "y": 242.32, "w": 310.62, "h": 30.16}, {"t": "img", "src": "assets/s07-14.webp", "kind": "text", "name": "Производитель создаёт продукт и покупает рекламные размещения для аудитории.", "x": 155.19, "y": 295.55, "w": 312.52, "h": 109.25}, {"t": "img", "src": "assets/s07-15.webp", "kind": "text", "name": "Производитель создаёт продукт, события и медиа, формируя собственную аудиторию.", "x": 736.03, "y": 295.55, "w": 335.33, "h": 109.25}, {"t": "img", "src": "assets/s07-16.webp", "kind": "text", "name": "Компания сама создает поводы для внимания.", "x": 322.94, "y": 961, "w": 754.44, "h": 24.57}, {"t": "img", "src": "assets/s07-17.webp", "kind": "card", "name": "Frame", "x": 735, "y": 428, "w": 188, "h": 62}, {"t": "img", "src": "assets/s07-18.webp", "kind": "card", "name": "Frame", "x": 735, "y": 509, "w": 365, "h": 62}]}, {"id": "349:154", "name": "06 · Cirque du Soleil", "w": 1920, "h": 1080, "bg": "assets/s08-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [0.25456804037094116, -0.9670549035072327, 0.9670549035072327, 0.25456804037094116, -591.232421875, -591.232421875], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s08-01.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 620, "w": 480, "h": 460}, {"t": "img", "src": "assets/s08-02.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}, {"t": "img", "src": "assets/s08-03.webp", "kind": "image", "name": "n0JjqklSlWUwI58Q48aiSQI-CqgYsjeGz9EYRTw9qG0ctzFjDyodNqLWxHZgLmui5IQ2h0dhGZEREyxYKtFwljd9ulwmhmw6zbOivOCsspRsQ_FNGkcH-raZcREJuKw7EtX6T0vXf-Y600d_jB9CioZXBtOm6DXzMTi6wa28LnEiyOyIK_6NnvSgvXn91yNp 1", "x": 100, "y": 287, "w": 410, "h": 273}, {"t": "img", "src": "assets/s08-04.webp", "kind": "image", "name": "Dd1T-fSAyktoZZQcU5cnrjdJOE-iUW5Heimbgferao9erIWahJfy9ZkIGuW5-OdJxn9NuCFw5AY77Z50ZiK4AUjocIc6ewEepsmMXks-7P5zlI3cYfnj1Gsf3_F7HF0roTukqv3t-YMCFdaZQNrh5eHhfApv3qJCTKez8Skclk_GmizGREY9cLBvj6Uc87xb 1", "x": 546, "y": 287, "w": 412, "h": 275}, {"t": "img", "src": "assets/s08-05.webp", "kind": "image", "name": "загрузка (35) 1", "x": 994, "y": 183, "w": 212, "h": 377}, {"t": "img", "src": "assets/s08-06.webp", "kind": "image", "name": "ChatGPT Image 23 сент. 2026 г., 08_18_51 1", "x": 0, "y": 0, "w": 1911, "h": 1080}, {"t": "img", "src": "assets/s08-07.webp", "kind": "text", "name": "Cirque du Soleil создал собственный формат цирка", "x": 164, "y": 27.86, "w": 779.43, "h": 270.99}, {"t": "img", "src": "assets/s08-08.webp", "kind": "text", "name": "Обычный цирк", "x": 353.35, "y": 418.23, "w": 243.65, "h": 28.59}, {"t": "img", "src": "assets/s08-09.webp", "kind": "text", "name": "Cirque du Soleil", "x": 1229.32, "y": 340.84, "w": 238.85, "h": 28.98}, {"t": "img", "src": "assets/s08-10.webp", "kind": "text", "name": "🐘 Животные", "x": 352, "y": 492.96, "w": 189.57, "h": 28}, {"t": "img", "src": "assets/s08-11.webp", "kind": "text", "name": "⭐ Звёздные артисты", "x": 352, "y": 534.96, "w": 306.64, "h": 31.47}, {"t": "img", "src": "assets/s08-12.webp", "kind": "text", "name": "🎪 Несколько арен", "x": 352, "y": 576.96, "w": 271.77, "h": 31.47}, {"t": "img", "src": "assets/s08-13.webp", "kind": "text", "name": "💰 Низкая цена билета", "x": 352, "y": 623.96, "w": 331.69, "h": 29.48}, {"t": "img", "src": "assets/s08-14.webp", "kind": "text", "name": "Другая аудитория. Другая цена.", "x": 352.31, "y": 717.2, "w": 329.51, "h": 48.75}, {"t": "img", "src": "assets/s08-15.webp", "kind": "text", "name": "🎭 Сюжет", "x": 1192, "y": 435.96, "w": 133.65, "h": 28}, {"t": "img", "src": "assets/s08-16.webp", "kind": "text", "name": "🎵 Музыка", "x": 1192, "y": 491.96, "w": 147.01, "h": 31.64}, {"t": "img", "src": "assets/s08-17.webp", "kind": "text", "name": "🎨 Сценография", "x": 1192, "y": 549.96, "w": 235.3, "h": 31.47}, {"t": "img", "src": "assets/s08-18.webp", "kind": "text", "name": "💎 Театральный production value", "x": 1192, "y": 600.96, "w": 240.51, "h": 65.47}, {"t": "img", "src": "assets/s08-19.webp", "kind": "text", "name": "Они не стали билдить «лучший цирк». Зато изменили сам рынок, с которым себя сравнивали.", "x": 698.94, "y": 858.23, "w": 620.68, "h": 100.59}]}, {"id": "372:550", "name": "02 · Из чего состоит бизнес-модель", "w": 1920, "h": 1080, "bg": "assets/s09-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [0.8638178110122681, -0.5038042664527893, 0.5038042664527893, 0.8638178110122681, 0, -836.12890625], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s09-01.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 620, "w": 480, "h": 460}, {"t": "img", "src": "assets/s09-02.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}]}, {"id": "371:189", "name": "02 · Из чего состоит бизнес-модель", "w": 1920, "h": 1080, "bg": "assets/s10-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [0.8638178110122681, -0.5038042664527893, 0.5038042664527893, 0.8638178110122681, 0, -836.12890625], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s10-01.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 620, "w": 480, "h": 460}, {"t": "img", "src": "assets/s10-02.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}, {"t": "img", "src": "assets/s10-03.webp", "kind": "text", "name": "Окей, у вас есть бесчисленное множество комбинаций разных моделей Но какую можно назвать успешной?", "x": 128.94, "y": 315.05, "w": 1142.25, "h": 323.09}, {"t": "img", "src": "assets/s10-04.webp", "kind": "image", "name": "Хм, устроить тыгыдык в три ночи или в пять утра_ 1", "x": 1330, "y": 332, "w": 404, "h": 437}, {"t": "img", "src": "assets/s10-05.webp", "kind": "other", "name": "Frame 2087329102", "x": 1427, "y": 229, "w": 224.92, "h": 218.29}, {"t": "img", "src": "assets/s10-06.webp", "kind": "vector", "name": "Vector 23", "x": 1403.53, "y": 181.39, "w": 33.3, "h": 55.1}, {"t": "img", "src": "assets/s10-07.webp", "kind": "vector", "name": "Vector 24", "x": 1377.99, "y": 211.18, "w": 69.98, "h": 23.43}, {"t": "img", "src": "assets/s10-08.webp", "kind": "vector", "name": "Vector 25", "x": 1403.59, "y": 185.15, "w": 42.93, "h": 63.05}, {"t": "img", "src": "assets/s10-09.webp", "kind": "vector", "name": "Vector 26", "x": 1578.88, "y": 100.76, "w": 26.95, "h": 66.67}, {"t": "img", "src": "assets/s10-10.webp", "kind": "vector", "name": "Vector 27", "x": 1552.3, "y": 114.23, "w": 68.67, "h": 25.1}, {"t": "img", "src": "assets/s10-11.webp", "kind": "vector", "name": "Vector 28", "x": 1556.63, "y": 112.77, "w": 59.51, "h": 27.38}, {"t": "img", "src": "assets/s10-12.webp", "kind": "vector", "name": "Vector 29", "x": 1567.59, "y": 108.85, "w": 33.8, "h": 42.25}, {"t": "img", "src": "assets/s10-13.webp", "kind": "vector", "name": "Vector 30", "x": 1603.12, "y": 211.67, "w": 19.86, "h": 46}, {"t": "img", "src": "assets/s10-14.webp", "kind": "vector", "name": "Vector 32", "x": 1591.62, "y": 219.12, "w": 37.68, "h": 33.08}, {"t": "img", "src": "assets/s10-15.webp", "kind": "vector", "name": "Vector 33", "x": 1489.89, "y": 226.59, "w": 28.52, "h": 46.04}, {"t": "img", "src": "assets/s10-16.webp", "kind": "vector", "name": "Vector 35", "x": 1497.03, "y": 235.52, "w": 23.92, "h": 31.89}, {"t": "img", "src": "assets/s10-17.webp", "kind": "vector", "name": "Vector 37", "x": 1464.5, "y": 88.93, "w": 20.02, "h": 76}, {"t": "img", "src": "assets/s10-18.webp", "kind": "vector", "name": "Vector 38", "x": 1444, "y": 112, "w": 76.94, "h": 18}, {"t": "img", "src": "assets/s10-19.webp", "kind": "vector", "name": "Vector 39", "x": 1452.59, "y": 99.92, "w": 46.03, "h": 45.95}, {"t": "img", "src": "assets/s10-20.webp", "kind": "vector", "name": "Vector 40", "x": 1450.92, "y": 99.63, "w": 51.35, "h": 51.43}, {"t": "img", "src": "assets/s10-21.webp", "kind": "card", "name": "component-text-block", "x": 224, "y": 668, "w": 1696, "h": 143.38}]}, {"id": "349:552", "name": "14 · Skyeng vs Preply", "w": 1920, "h": 1080, "bg": "assets/s11-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [0.8682162165641785, 0.4961860179901123, -0.4961860179901123, 0.8682162165641785, 724.109375, -418.064453125], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s11-01.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 620, "w": 480, "h": 460}, {"t": "img", "src": "assets/s11-02.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}, {"t": "img", "src": "assets/s11-03.webp", "kind": "image", "name": "ChatGPT Image 23 сент. 2026 г., 10_22_07 1", "x": 0, "y": 0, "w": 1920, "h": 1080}, {"t": "img", "src": "assets/s11-04.webp", "kind": "shape", "name": "Rectangle 57788380", "x": 949, "y": 52, "w": 900, "h": 145}, {"t": "img", "src": "assets/s11-05.webp", "kind": "text", "name": "2 траектории из 1 точки", "x": 996.48, "y": 93.4, "w": 755.02, "h": 54.24}, {"t": "img", "src": "assets/s11-06.webp", "kind": "text", "name": "Отправная точка была 1 и та же Обучение языкам онлайн", "x": 84.39, "y": 543.2, "w": 187.36, "h": 149.96}, {"t": "img", "src": "assets/s11-07.webp", "kind": "text", "name": "Строили технологическую платформу Vimbox, методику и сеть преподавателей внутри компании.", "x": 1039.98, "y": 270.16, "w": 404.11, "h": 66.84}, {"t": "img", "src": "assets/s11-08.webp", "kind": "text", "name": "Собрали глобальный маркетплейс, который соединяет учеников с независимыми преподавателями.", "x": 1040.88, "y": 594.84, "w": 379.07, "h": 67.04}, {"t": "img", "src": "assets/s11-09.webp", "kind": "text", "name": "Не строят собственную сеть преподавателей и методику, а дают инфраструктуру для взаимодействия.", "x": 1041.86, "y": 722.84, "w": 400.71, "h": 67.16}, {"t": "img", "src": "assets/s11-10.webp", "kind": "text", "name": "Расширили экосистему от детского образования до обучения взрослых и профессиональных навыков.", "x": 1040.88, "y": 399, "w": 382.47, "h": 65.88}, {"t": "img", "src": "assets/s11-11.webp", "kind": "text", "name": "Вертикальная бизнес-модель", "x": 1564.03, "y": 400.4, "w": 223.82, "h": 57.04}, {"t": "img", "src": "assets/s11-12.webp", "kind": "text", "name": "Бизнес-модель маркетплейса", "x": 1564.38, "y": 730.4, "w": 224.45, "h": 59.03}, {"t": "img", "src": "assets/s11-13.webp", "kind": "text", "name": "Отправная точка была одна и та же: обучение языкам онлайн. Skyeng выбрал вертикаль, Preply выбрал горизонталь.", "x": 661.2, "y": 925.47, "w": 785.18, "h": 50.13}]}, {"id": "372:579", "name": "02 · Из чего состоит бизнес-модель", "w": 1920, "h": 1080, "bg": "assets/s12-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [0.8638178110122681, -0.5038042664527893, 0.5038042664527893, 0.8638178110122681, 0, -836.12890625], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s12-01.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 620, "w": 480, "h": 460}, {"t": "img", "src": "assets/s12-02.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}, {"t": "img", "src": "assets/s12-03.webp", "kind": "text", "name": "Поэтому успешной можно назвать ту модель, в которой рост выручки опережает рост издержек", "x": 206.6, "y": 209.92, "w": 1524.39, "h": 234.15}, {"t": "img", "src": "assets/s12-04.webp", "kind": "image", "name": "217 1", "x": 1502.07, "y": 444.07, "w": 364.65, "h": 262.6}, {"t": "img", "src": "assets/s12-05.webp", "kind": "image", "name": "images (5) 1", "x": 123.15, "y": 481.15, "w": 276.31, "h": 276.31}, {"t": "img", "src": "assets/s12-06.webp", "kind": "text", "name": "Вертикаль дороже в содержании. Чем больше вы строите сами, тем больше у вас постоянных издержек, которые нужно окупать при любом обороте. Горизонталь легче в этом смысле — маркетплейс не платит зарплату преподавателям, поэтому быстрее доходит до операционного плюса, даже при более скромной выручке.", "x": 448.01, "y": 706.23, "w": 1046.41, "h": 244.8}, {"t": "img", "src": "assets/s12-07.webp", "kind": "vector", "name": "Vector 41", "x": 470.67, "y": 569.09, "w": 990.59, "h": 66.91}, {"t": "img", "src": "assets/s12-08.webp", "kind": "vector", "name": "Vector 42", "x": 469.33, "y": 564, "w": 145.33, "h": 34.67}, {"t": "img", "src": "assets/s12-09.webp", "kind": "vector", "name": "Vector 43", "x": 473.33, "y": 593.33, "w": 121.33, "h": 28}, {"t": "img", "src": "assets/s12-10.webp", "kind": "vector", "name": "Vector 44", "x": 642.67, "y": 522.67, "w": 34.67, "h": 45.33}, {"t": "img", "src": "assets/s12-11.webp", "kind": "vector", "name": "Vector 45", "x": 679.12, "y": 523.66, "w": 33.92, "h": 37.6}, {"t": "img", "src": "assets/s12-12.webp", "kind": "vector", "name": "Vector 46", "x": 709.33, "y": 512, "w": 36, "h": 52}, {"t": "img", "src": "assets/s12-13.webp", "kind": "vector", "name": "Vector 47", "x": 714.67, "y": 512, "w": 25.33, "h": 50.67}, {"t": "img", "src": "assets/s12-14.webp", "kind": "vector", "name": "Vector 48", "x": 744.42, "y": 517.23, "w": 30.49, "h": 37.88}, {"t": "img", "src": "assets/s12-15.webp", "kind": "vector", "name": "Vector 49", "x": 780, "y": 516, "w": 37.33, "h": 38.67}, {"t": "img", "src": "assets/s12-16.webp", "kind": "vector", "name": "Vector 50", "x": 772, "y": 512, "w": 48, "h": 49.33}, {"t": "img", "src": "assets/s12-17.webp", "kind": "vector", "name": "Vector 51", "x": 792, "y": 508, "w": 10.67, "h": 54.67}, {"t": "img", "src": "assets/s12-18.webp", "kind": "vector", "name": "Vector 52", "x": 831.94, "y": 502.33, "w": 41.39, "h": 56.14}, {"t": "img", "src": "assets/s12-19.webp", "kind": "vector", "name": "Vector 53", "x": 868, "y": 487.4, "w": 42.67, "h": 67.27}, {"t": "img", "src": "assets/s12-20.webp", "kind": "vector", "name": "Vector 54", "x": 961.98, "y": 517.33, "w": 26.02, "h": 33.33}, {"t": "img", "src": "assets/s12-21.webp", "kind": "vector", "name": "Vector 55", "x": 993.33, "y": 516, "w": 40, "h": 37.33}, {"t": "img", "src": "assets/s12-22.webp", "kind": "vector", "name": "Vector 56", "x": 1036.33, "y": 513, "w": 39.33, "h": 40.67}, {"t": "img", "src": "assets/s12-23.webp", "kind": "vector", "name": "Vector 57", "x": 1078.33, "y": 512.33, "w": 29.34, "h": 40.66}, {"t": "img", "src": "assets/s12-24.webp", "kind": "vector", "name": "Vector 58", "x": 1077, "y": 508.33, "w": 22, "h": 25.33}, {"t": "img", "src": "assets/s12-25.webp", "kind": "vector", "name": "Vector 59", "x": 1110.95, "y": 509.69, "w": 30.71, "h": 41.31}, {"t": "img", "src": "assets/s12-26.webp", "kind": "vector", "name": "Vector 60", "x": 1141.67, "y": 509.03, "w": 48.67, "h": 57.49}, {"t": "img", "src": "assets/s12-27.webp", "kind": "vector", "name": "Vector 61", "x": 1182.33, "y": 506, "w": 28.67, "h": 34.34}, {"t": "img", "src": "assets/s12-28.webp", "kind": "vector", "name": "Vector 62", "x": 1211.67, "y": 488.77, "w": 46.67, "h": 50.9}]}, {"id": "375:673", "name": "04 · Раздел Performance", "w": 1920, "h": 1080, "bg": "assets/s13-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [0.9670549035072327, 0.25456804037094116, -0.25456804037094116, 0.9670549035072327, 591.232421875, -591.232421875], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s13-01.webp", "kind": "other", "name": "Frame", "x": 0, "y": 20, "w": 580, "h": 860}, {"t": "img", "src": "assets/s13-02.webp", "kind": "other", "name": "Frame", "x": 1220, "y": 220, "w": 700, "h": 760}, {"t": "img", "src": "assets/s13-03.webp", "kind": "image", "name": "Frame", "x": 86.97, "y": 75.48, "w": 1745.06, "h": 954.06}, {"t": "img", "src": "assets/s13-04.webp", "kind": "card", "name": "Frame", "x": 861.59, "y": 739.19, "w": 931.83, "h": 251.83}]}, {"id": "375:685", "name": "19 · Задание №1 — пересборка бизнес-модели", "w": 1920, "h": 1328, "bg": "assets/s14-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [0.5038042664527893, 0.8638178110122681, -0.8638178110122681, 0.5038042664527893, 838.12890625, 0], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s14-01.webp", "kind": "image", "name": "OMbrRQFvhaK3ojd_ohcVRBPKJJ_tVIHgiA6zxqhTxLyahevY-DeI3Pnea7YndNY6W0NXtyKmWR-cADnKE1F3OBUCHrLT_TjRhWN2qpptb7d7gjh7rIi33pz94dr-WNuEFvI3t5MuJgCpzPPgzf3CgLcNHWGynfssiK96g2aY__ZdUYUTw1gsS2RX0vYFGgbc 1", "x": 1294, "y": 330, "w": 580, "h": 580}, {"t": "img", "src": "assets/s14-02.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 594, "w": 480, "h": 734}, {"t": "img", "src": "assets/s14-03.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}, {"t": "img", "src": "assets/s14-04.webp", "kind": "card", "name": "Frame", "x": 92, "y": 50.09, "w": 155.5, "h": 50.16}, {"t": "img", "src": "assets/s14-05.webp", "kind": "text", "name": "Старую бизнес-модель сломали 🔨", "x": 95.32, "y": 121.83, "w": 1341.63, "h": 81.69}, {"t": "img", "src": "assets/s14-06.webp", "kind": "text", "name": "можно сфотать 📸", "x": 1167.02, "y": 33.83, "w": 688.28, "h": 82.19}, {"t": "img", "src": "assets/s14-07.webp", "kind": "text", "name": "Вы новый собственник компании, и у вас 15 минут, чтобы пересобрать бизнес-модель.", "x": 94.84, "y": 243.92, "w": 1197.56, "h": 24.99}, {"t": "img", "src": "assets/s14-08.webp", "kind": "text", "name": "Что нужно сделать", "x": 92.62, "y": 298.42, "w": 222, "h": 19.89}, {"t": "img", "src": "assets/s14-09.webp", "kind": "text", "name": "1. Разберите сломанную модель", "x": 92.21, "y": 340.2, "w": 449.13, "h": 25.04}, {"t": "img", "src": "assets/s14-10.webp", "kind": "text", "name": "Ответьте:", "x": 93.02, "y": 380.93, "w": 96.15, "h": 14.37}, {"t": "img", "src": "assets/s14-11.webp", "kind": "card", "name": "Frame", "x": 92, "y": 408.23, "w": 176.57, "h": 46.15}, {"t": "img", "src": "assets/s14-12.webp", "kind": "card", "name": "Frame", "x": 278.6, "y": 408.23, "w": 120.39, "h": 46.15}, {"t": "img", "src": "assets/s14-13.webp", "kind": "card", "name": "Frame", "x": 409.01, "y": 408.23, "w": 425.36, "h": 46.15}, {"t": "img", "src": "assets/s14-14.webp", "kind": "card", "name": "Frame", "x": 844.41, "y": 408.23, "w": 356.14, "h": 46.15}, {"t": "img", "src": "assets/s14-15.webp", "kind": "text", "name": "2. Придумайте две новые модели", "x": 92.21, "y": 496.09, "w": 470.41, "h": 24.65}, {"t": "img", "src": "assets/s14-16.webp", "kind": "text", "name": "Модель А: вертикальная", "x": 94.38, "y": 537.78, "w": 314.19, "h": 21.52}, {"t": "img", "src": "assets/s14-17.webp", "kind": "text", "name": "Что компания может начать контролировать сама?", "x": 92.87, "y": 574.89, "w": 569.6, "h": 46}, {"t": "img", "src": "assets/s14-18.webp", "kind": "text", "name": "Какое новое звено цепочки она может забрать себе, чтобы получать больше ценности и маржи?", "x": 92.67, "y": 641.11, "w": 494.95, "h": 79.52}, {"t": "img", "src": "assets/s14-19.webp", "kind": "text", "name": "Модель Б: горизонтальная", "x": 706.34, "y": 537.78, "w": 340.99, "h": 21.52}, {"t": "img", "src": "assets/s14-20.webp", "kind": "text", "name": "Что компания может перестать делать сама?", "x": 704.83, "y": 574.89, "w": 490.71, "h": 46}, {"t": "img", "src": "assets/s14-21.webp", "kind": "text", "name": "Можно ли превратить бизнес в платформу, которая соединяет между собой клиентов, партнёров, продавцов или других участников рынка?", "x": 703.57, "y": 639.71, "w": 553.95, "h": 110.07}, {"t": "img", "src": "assets/s14-22.webp", "kind": "text", "name": "3. Сравните модели", "x": 92.03, "y": 782.51, "w": 274.99, "h": 23.58}, {"t": "img", "src": "assets/s14-23.webp", "kind": "text", "name": "Для каждой ответьте:", "x": 92.26, "y": 821.37, "w": 225.39, "h": 17.86}, {"t": "img", "src": "assets/s14-24.webp", "kind": "card", "name": "Frame", "x": 92, "y": 849.26, "w": 483.55, "h": 46.15}, {"t": "img", "src": "assets/s14-25.webp", "kind": "card", "name": "Frame", "x": 585.58, "y": 849.26, "w": 283.91, "h": 46.15}, {"t": "img", "src": "assets/s14-26.webp", "kind": "card", "name": "Frame", "x": 92, "y": 905.44, "w": 504.62, "h": 46.15}, {"t": "img", "src": "assets/s14-27.webp", "kind": "card", "name": "Frame", "x": 606.65, "y": 905.44, "w": 258.83, "h": 46.15}, {"t": "img", "src": "assets/s14-28.webp", "kind": "text", "name": "4. Пропитчите идею", "x": 92.89, "y": 987.89, "w": 282.58, "h": 23.32}, {"t": "img", "src": "assets/s14-29.webp", "kind": "text", "name": "90 секунд на команду:", "x": 92.56, "y": 1027.08, "w": 235.34, "h": 18.22}, {"t": "img", "src": "assets/s14-30.webp", "kind": "card", "name": "Frame", "x": 92, "y": 1054, "w": 982, "h": 165}, {"t": "img", "src": "assets/s14-31.webp", "kind": "text", "name": "Не придумывайте новый бизнес. Работайте с тем, что уже есть у компании: ее клиентами, активами, компетенциями, каналами продаж и инфраструктурой.", "x": 1252.06, "y": 941.23, "w": 605.87, "h": 172.8}]}, {"id": "375:751", "name": "04 · Раздел Performance", "w": 1920, "h": 1080, "bg": "assets/s15-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [0.9670549035072327, 0.25456804037094116, -0.25456804037094116, 0.9670549035072327, 591.232421875, -591.232421875], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s15-01.webp", "kind": "image", "name": "ChatGPT Image 23 сент. 2026 г., 12_02_09 1", "x": 0, "y": 0, "w": 1920, "h": 1080}, {"t": "img", "src": "assets/s15-02.webp", "kind": "other", "name": "Frame", "x": 0, "y": 20, "w": 580, "h": 860}, {"t": "img", "src": "assets/s15-03.webp", "kind": "other", "name": "Frame", "x": 1220, "y": 220, "w": 700, "h": 760}]}, {"id": "cats", "custom": "cats", "name": "Коты строят дом", "w": 1920, "h": 1080, "bg": "assets/cats-minecraft.webp", "items": []}, {"id": "376:766", "name": "02 · Из чего состоит бизнес-модель", "w": 1920, "h": 1080, "bg": "assets/s16-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [0.8638178110122681, -0.5038042664527893, 0.5038042664527893, 0.8638178110122681, 0, -836.12890625], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s16-01.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 620, "w": 480, "h": 460}, {"t": "img", "src": "assets/s16-02.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}, {"t": "img", "src": "assets/s16-03.webp", "kind": "text", "name": "А теперь посмотрим, как компании в новой реальности находили успешные модели, когда старой уже было недостаточно", "x": 243.72, "y": 433, "w": 999.78, "h": 225.05}, {"t": "img", "src": "assets/s16-04.webp", "kind": "other", "name": "Frame 2087329102", "x": 1427, "y": 237, "w": 224.92, "h": 210.29}, {"t": "img", "src": "assets/s16-05.webp", "kind": "image", "name": "65eed63acbaf3234bca2f8cec65d5b53 1", "x": 1285, "y": 221, "w": 528, "h": 658}]}, {"id": "349:264", "name": "09 · Cursor", "w": 1920, "h": 1080, "bg": "assets/s17-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [0.9999902844429016, -0.0043983799405395985, 0.0043983799405395985, 0.9999902844429016, 418.064453125, -724.10888671875], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s17-01.webp", "kind": "card", "name": "Frame", "x": 1179.74, "y": 142.05, "w": 665.75, "h": 535.52}, {"t": "img", "src": "assets/s17-02.webp", "kind": "vector", "name": "Vector 2", "x": 0, "y": 0, "w": 872.88, "h": 315.32}, {"t": "img", "src": "assets/s17-03.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 620, "w": 480, "h": 460}, {"t": "img", "src": "assets/s17-04.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}, {"t": "img", "src": "assets/s17-05.webp", "kind": "text", "name": "Cursor: рекорд скорости для B2B-софта", "x": 103.12, "y": 74.04, "w": 1557.96, "h": 70.93}, {"t": "img", "src": "assets/s17-06.webp", "kind": "card", "name": "Frame", "x": 68, "y": 166, "w": 844, "h": 677}, {"t": "img", "src": "assets/s17-07.webp", "kind": "image", "name": "image 2", "x": 1311.05, "y": 622.05, "w": 562.44, "h": 450.42}, {"t": "img", "src": "assets/s17-08.webp", "kind": "image", "name": "image 1", "x": 888.33, "y": 139.33, "w": 392.69, "h": 267.6}, {"t": "img", "src": "assets/s17-09.webp", "kind": "vector", "name": "Vector 18", "x": 991.03, "y": 386.47, "w": 228.17, "h": 354.42}, {"t": "img", "src": "assets/s17-10.webp", "kind": "image", "name": "ChatGPT Image 23 сент. 2026 г., 09_52_54 1", "x": 947, "y": 686, "w": 394, "h": 326}]}, {"id": "349:494", "name": "13 · Higgsfield", "w": 1920, "h": 1080, "bg": "assets/s18-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [-0.9999902844429016, 0.0043983799405395985, -0.0043983799405395985, -0.9999902844429016, -418.064453125, 724.10888671875], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s18-01.webp", "kind": "vector", "name": "Vector 2", "x": 0, "y": 0, "w": 1081.75, "h": 427.38}, {"t": "img", "src": "assets/s18-02.webp", "kind": "vector", "name": "Vector 3", "x": 0, "y": 0, "w": 915.75, "h": 449.38}, {"t": "img", "src": "assets/s18-03.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 620, "w": 480, "h": 460}, {"t": "img", "src": "assets/s18-04.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}, {"t": "img", "src": "assets/s18-05.webp", "kind": "text", "name": "Higgsfield: рост в 35 раз за год", "x": 101.64, "y": 64.04, "w": 1207.57, "h": 79.12}, {"t": "img", "src": "assets/s18-06.webp", "kind": "card", "name": "Frame", "x": 68, "y": 166, "w": 844, "h": 784}, {"t": "img", "src": "assets/s18-07.webp", "kind": "card", "name": "Frame", "x": 1162.83, "y": 172.8, "w": 718.1, "h": 561.87}, {"t": "img", "src": "assets/s18-08.webp", "kind": "other", "name": "Logo_OLD_1 1", "x": 1664, "y": 971, "w": 163, "h": 42}, {"t": "img", "src": "assets/s18-09.webp", "kind": "image", "name": "image 3", "x": 1552.88, "y": 62.88, "w": 367.11, "h": 218.76}, {"t": "img", "src": "assets/s18-10.webp", "kind": "image", "name": "image 4", "x": 962.59, "y": 662.72, "w": 657.83, "h": 390.03}, {"t": "img", "src": "assets/s18-11.webp", "kind": "image", "name": "загрузка (41) 1", "x": 890.35, "y": 186.35, "w": 271.15, "h": 456.88}]}, {"id": "349:380", "name": "11 · Ramp", "w": 1920, "h": 1080, "bg": "assets/s19-bg.webp", "items": [{"t": "img", "src": "assets/s19-00.webp", "kind": "vector", "name": "Vector 2", "x": 0, "y": 0, "w": 1096.63, "h": 425.53}, {"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [-0.177978053689003, -0.9840344190597534, 0.9840344190597534, -0.177978053689003, -785.705078125, -285.972900390625], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s19-02.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 620, "w": 480, "h": 460}, {"t": "img", "src": "assets/s19-03.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}, {"t": "img", "src": "assets/s19-04.webp", "kind": "text", "name": "Ramp: выручка через интерчейндж, а не подписку", "x": 102.95, "y": 85, "w": 1426.28, "h": 156.47}, {"t": "img", "src": "assets/s19-05.webp", "kind": "card", "name": "Frame", "x": 68, "y": 252, "w": 844, "h": 753}, {"t": "img", "src": "assets/s19-06.webp", "kind": "card", "name": "Frame", "x": 886.73, "y": 256.3, "w": 687.4, "h": 540.59}, {"t": "img", "src": "assets/s19-07.webp", "kind": "image", "name": "image 5", "x": 1509.57, "y": 642.47, "w": 381.77, "h": 259.73}, {"t": "img", "src": "assets/s19-08.webp", "kind": "image", "name": "default-og-image 1", "x": 1095.92, "y": 740.92, "w": 414.59, "h": 336.64}]}, {"id": "349:440", "name": "12 · Hims & Hers", "w": 1920, "h": 1080, "bg": "assets/s20-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [-0.7688642740249634, -0.639411985874176, 0.639411985874176, -0.7688642740249634, -785.703125, 285.972900390625], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s20-01.webp", "kind": "vector", "name": "Vector 2", "x": 0, "y": 0, "w": 999.63, "h": 454.53}, {"t": "img", "src": "assets/s20-02.webp", "kind": "vector", "name": "Vector 3", "x": 0, "y": 0, "w": 873.63, "h": 454.53}, {"t": "img", "src": "assets/s20-03.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 620, "w": 480, "h": 460}, {"t": "img", "src": "assets/s20-04.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}, {"t": "img", "src": "assets/s20-05.webp", "kind": "text", "name": "Hims & Hers: скромный рост? 🤨", "x": 106.64, "y": 74.04, "w": 1276.65, "h": 80.93}, {"t": "img", "src": "assets/s20-06.webp", "kind": "card", "name": "Frame", "x": 68, "y": 178, "w": 844, "h": 785}, {"t": "img", "src": "assets/s20-07.webp", "kind": "card", "name": "Frame", "x": 903.38, "y": 186.53, "w": 657.24, "h": 520.24}, {"t": "img", "src": "assets/s20-08.webp", "kind": "image", "name": "Снимок_экрана_2026-09-23_100124-removebg-preview 1", "x": 1376, "y": 455, "w": 544, "h": 505.43}, {"t": "img", "src": "assets/s20-09.webp", "kind": "image", "name": "загрузка (42) 1", "x": 966.17, "y": 658.17, "w": 447.32, "h": 418.94}]}, {"id": "349:322", "name": "10 · Anduril", "w": 1920, "h": 1080, "bg": "assets/s21-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [0.4961860179901123, -0.8682162165641785, 0.8682162165641785, 0.4961860179901123, -418.06640625, -724.10888671875], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s21-01.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 620, "w": 480, "h": 460}, {"t": "img", "src": "assets/s21-02.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}, {"t": "img", "src": "assets/s21-03.webp", "kind": "text", "name": "Anduril: буст в стиле продуктовой компании", "x": 99.28, "y": 78.04, "w": 1752.68, "h": 77.43}, {"t": "img", "src": "assets/s21-04.webp", "kind": "card", "name": "Frame", "x": 68, "y": 166, "w": 844, "h": 753}, {"t": "img", "src": "assets/s21-05.webp", "kind": "card", "name": "Frame", "x": 896.02, "y": 172.01, "w": 759.97, "h": 596.97}, {"t": "img", "src": "assets/s21-06.webp", "kind": "image", "name": "Anduril-NL-Website 1", "x": 1183.59, "y": 702.59, "w": 323.23, "h": 323.23}, {"t": "img", "src": "assets/s21-07.webp", "kind": "image", "name": "images (4) 1", "x": 1482.2, "y": 703.19, "w": 406.13, "h": 314.75}, {"t": "img", "src": "assets/s21-08.webp", "kind": "image", "name": "image 6", "x": 849.68, "y": 703.42, "w": 356.64, "h": 373.17}]}, {"id": "372:624", "name": "18 · Что объединяет 5 компаний", "w": 1920, "h": 1080, "bg": "assets/s22-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [0.5038042664527893, 0.8638178110122681, -0.8638178110122681, 0.5038042664527893, 836.12890625, 0], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s22-01.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 620, "w": 480, "h": 460}, {"t": "img", "src": "assets/s22-02.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}, {"t": "img", "src": "assets/s22-03.webp", "kind": "text", "name": "Что объединяет Cursor, Anduril, Ramp, Hims & Hers и Higgsfield", "x": 102.02, "y": 61.42, "w": 1671.82, "h": 156.06}, {"t": "img", "src": "assets/s22-04.webp", "kind": "card", "name": "Frame", "x": 100, "y": 252, "w": 1720, "h": 112}, {"t": "img", "src": "assets/s22-05.webp", "kind": "card", "name": "Frame", "x": 68, "y": 368, "w": 616, "h": 643}, {"t": "img", "src": "assets/s22-06.webp", "kind": "card", "name": "Frame", "x": 652, "y": 368, "w": 616, "h": 643}, {"t": "img", "src": "assets/s22-07.webp", "kind": "card", "name": "Frame", "x": 1236, "y": 368, "w": 616, "h": 643}]}, {"id": "349:581", "name": "15 · Рост через блогеров", "w": 1920, "h": 1080, "bg": "assets/s23-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [-0.8682162165641785, -0.4961860179901123, 0.4961860179901123, -0.8682162165641785, -724.109375, 418.064453125], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s23-01.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 620, "w": 480, "h": 460}, {"t": "img", "src": "assets/s23-02.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}, {"t": "img", "src": "assets/s23-03.webp", "kind": "image", "name": "ChatGPT Image 23 сент. 2026 г., 12_17_53 1", "x": 0, "y": 4, "w": 1920, "h": 1076}, {"t": "img", "src": "assets/s23-04.webp", "kind": "card", "name": "Frame 2087329882", "x": 52, "y": 70, "w": 324, "h": 82}, {"t": "img", "src": "assets/s23-05.webp", "kind": "text", "name": "Creator-led growth", "x": 88.17, "y": 165.58, "w": 698.95, "h": 67.9}, {"t": "img", "src": "assets/s23-06.webp", "kind": "text", "name": "Компания делает ставку не на классический маркетинг-отдел, а на блогеров и микроблогеров как на главный канал продаж, по логике TikTok-хаусов: растёт не бренд, а конкретное лицо, за которым идёт аудитория.", "x": 86.1, "y": 291.57, "w": 801.1, "h": 113.43}, {"t": "img", "src": "assets/s23-07.webp", "kind": "text", "name": "FitStars", "x": 246.76, "y": 513.12, "w": 152.24, "h": 31.28}, {"t": "img", "src": "assets/s23-08.webp", "kind": "text", "name": "«99 Баллов» и «100-балльный репетитор»", "x": 1157.68, "y": 488.6, "w": 470.7, "h": 84.16}, {"t": "img", "src": "assets/s23-09.webp", "kind": "text", "name": "Сначала продавали программы тренировок напрямую.", "x": 148.46, "y": 617.18, "w": 657.7, "h": 59.42}, {"t": "img", "src": "assets/s23-10.webp", "kind": "text", "name": "Тренеры с собственной аудиторией продавали и монетизировали продукт эффективнее.", "x": 147.36, "y": 696.78, "w": 705.91, "h": 60.82}, {"t": "img", "src": "assets/s23-11.webp", "kind": "text", "name": "Сегодня на инфлюенсеров приходится 90% продаж.", "x": 148.46, "y": 778.22, "w": 775.74, "h": 26.21}, {"t": "img", "src": "assets/s23-12.webp", "kind": "text", "name": "Превращают успешных учеников в кураторов и авторов контента.", "x": 1073.61, "y": 630.4, "w": 681.55, "h": 59.03}, {"t": "img", "src": "assets/s23-13.webp", "kind": "text", "name": "100 000+ учеников, 120 стобалльников.", "x": 1071.22, "y": 713.78, "w": 570.83, "h": 26.82}, {"t": "img", "src": "assets/s23-14.webp", "kind": "text", "name": "Ученик", "x": 157.29, "y": 940.2, "w": 94.13, "h": 17.26}, {"t": "img", "src": "assets/s23-15.webp", "kind": "text", "name": "результат", "x": 449.02, "y": 943.92, "w": 123.94, "h": 17.9}, {"t": "img", "src": "assets/s23-16.webp", "kind": "text", "name": "блог", "x": 759.3, "y": 938.78, "w": 57.6, "h": 18.46}, {"t": "img", "src": "assets/s23-17.webp", "kind": "text", "name": "новые ученики", "x": 1039.73, "y": 929.04, "w": 107.63, "h": 46.78}]}, {"id": "349:623", "name": "16 · SaaS-инструменты uForce", "w": 1920, "h": 1080, "bg": "assets/s24-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [-0.0043983799405395985, -0.9999902844429016, 0.9999902844429016, -0.0043983799405395985, -724.109375, -418.064453125], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s24-01.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 620, "w": 480, "h": 460}, {"t": "img", "src": "assets/s24-02.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}, {"t": "img", "src": "assets/s24-03.webp", "kind": "text", "name": "SaaS: маржинальность растет с масштабом, как у софта", "x": 102.52, "y": 126.35, "w": 1685.54, "h": 155.12}, {"t": "img", "src": "assets/s24-04.webp", "kind": "text", "name": "Масскомментинг (агентство)", "x": 103.46, "y": 323.03, "w": 536.65, "h": 32.76}, {"t": "img", "src": "assets/s24-05.webp", "kind": "text", "name": "ИИ анализирует нишу и продукт, сам генерирует живые реплики от лица обычного пользователя и держит топ-5 в комментариях под подходящими видео. Цена лида: 2 500 ₽ → 277 ₽. Лидов в месяц: около 100 → 600.", "x": 100.42, "y": 377, "w": 734.47, "h": 168.69}, {"t": "img", "src": "assets/s24-06.webp", "kind": "text", "name": "ИИ-телефония", "x": 103.46, "y": 584.03, "w": 270.27, "h": 32.76}, {"t": "img", "src": "assets/s24-07.webp", "kind": "text", "name": "Голосовой агент квалифицирует лида на холодном звонке и передаёт готового клиента в отдел продаж. Конверсия в лид: 48% → 59%. Время ответа: 1,5 часа → 3 секунды.", "x": 100.51, "y": 630.74, "w": 771.38, "h": 136.26}, {"t": "img", "src": "assets/s24-08.webp", "kind": "image", "name": "Frame 2087329881", "x": 968, "y": 216, "w": 833.11, "h": 387.64}, {"t": "img", "src": "assets/s24-09.webp", "kind": "image", "name": "17_wolf_ultrarealistic_photo_of_a_laptop_screen_with_a_funny__d2ffb988-5217-4a55-8fc3-9a6f8ed8b720_1 (1) 1", "x": 992, "y": 330, "w": 315.85, "h": 221.74}, {"t": "img", "src": "assets/s24-10.webp", "kind": "text", "name": "ИИ-создание сайтов", "x": 103.46, "y": 808.96, "w": 380.77, "h": 30.2}, {"t": "img", "src": "assets/s24-11.webp", "kind": "text", "name": "Структура, тексты, офферы и CTA собираются автоматически и адаптируются под источник трафика. До 100 сайтов одновременно, 2–4 часа на сайт вместо недель.", "x": 100.12, "y": 861.26, "w": 756.24, "h": 134.43}, {"t": "img", "src": "assets/s24-12.webp", "kind": "image", "name": "Old_Telephone-removebg-preview 1", "x": 884, "y": 510, "w": 190, "h": 285}, {"t": "img", "src": "assets/s24-13.webp", "kind": "image", "name": "image 7", "x": 1137.39, "y": 734.4, "w": 389.45, "h": 339.94}, {"t": "img", "src": "assets/s24-14.webp", "kind": "image", "name": "image 1926988041", "x": 1490, "y": 697, "w": 217, "h": 342}, {"t": "img", "src": "assets/s24-15.webp", "kind": "card", "name": "Frame 2087329882", "x": 90, "y": 12, "w": 324, "h": 82}, {"t": "img", "src": "assets/s24-16.webp", "kind": "image", "name": "uforce_pm_robot_calling_on_phone_on_white_background_hyperrea_e74fe501-ba0a-425f-85d9-448757372691_2-removebg-preview 1", "x": 1007, "y": 588, "w": 194, "h": 194}]}, {"id": "379:984", "name": "04 · Раздел Performance", "w": 1920, "h": 1080, "bg": "assets/s25-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [0.9670549035072327, 0.25456804037094116, -0.25456804037094116, 0.9670549035072327, 591.234375, -591.232421875], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s25-01.webp", "kind": "other", "name": "Frame", "x": 0, "y": 20, "w": 580, "h": 860}, {"t": "img", "src": "assets/s25-02.webp", "kind": "other", "name": "Frame", "x": 1220, "y": 220, "w": 700, "h": 760}, {"t": "img", "src": "assets/s25-03.webp", "kind": "image", "name": "Frame", "x": 86.97, "y": 75.48, "w": 1745.06, "h": 954.06}, {"t": "img", "src": "assets/s25-04.webp", "kind": "card", "name": "Frame", "x": 861.59, "y": 739.19, "w": 931.83, "h": 251.83}]}, {"id": "379:896", "name": "20 · Задание №2 — рынок и SaaS", "w": 1920, "h": 1196, "bg": "assets/s26-bg.webp", "items": [{"t": "blend", "src": "assets/img-01bd0c16668b.webp", "blend": "color-burn", "op": 0.85, "w": 1178.7352294921875, "h": 967.9459838867188, "m": [0.5038042664527893, 0.8638178110122681, -0.8638178110122681, 0.5038042664527893, 836.12890625, 0], "iw": 2000, "ih": 2000, "sm": "FILL"}, {"t": "img", "src": "assets/s26-01.webp", "kind": "blob", "name": "Rectangle", "x": 0, "y": 620, "w": 480, "h": 576}, {"t": "img", "src": "assets/s26-02.webp", "kind": "blob", "name": "Rectangle", "x": 1420, "y": 0, "w": 500, "h": 530}, {"t": "img", "src": "assets/s26-03.webp", "kind": "card", "name": "Frame", "x": 100, "y": 64, "w": 158, "h": 50}, {"t": "img", "src": "assets/s26-04.webp", "kind": "text", "name": "Изучите рынок и придумайте свой SaaS", "x": 107.13, "y": 145.43, "w": 1543.63, "h": 68.04}, {"t": "img", "src": "assets/s26-05.webp", "kind": "card", "name": "Frame", "x": 100, "y": 248, "w": 1720, "h": 100}, {"t": "img", "src": "assets/s26-06.webp", "kind": "card", "name": "Frame", "x": 68, "y": 344, "w": 616, "h": 794}, {"t": "img", "src": "assets/s26-07.webp", "kind": "card", "name": "Frame", "x": 652, "y": 344, "w": 616, "h": 794}, {"t": "img", "src": "assets/s26-08.webp", "kind": "card", "name": "Frame", "x": 1236, "y": 344, "w": 616, "h": 794}, {"t": "img", "src": "assets/s26-09.webp", "kind": "image", "name": "Мой кот строит!! 1", "x": 1661, "y": 54, "w": 242, "h": 192}]}, {"id": "cats2", "custom": "cats2", "name": "Коты строят офисы", "w": 1920, "h": 1080, "bg": "assets/cats-office.webp", "items": []}, {"id": "379:967", "name": "Frame 2087329970", "w": 1920, "h": 1080, "bg": "assets/s27-bg.webp", "items": [{"t": "img", "src": "assets/s27-00.webp", "kind": "card", "name": "Frame 2087329756", "x": 175, "y": 307, "w": 961, "h": 466}, {"t": "img", "src": "assets/s27-01.webp", "kind": "other", "name": "Logo_OLD_1 1", "x": 1664, "y": 971, "w": 163, "h": 42}, {"t": "img", "src": "assets/s27-02.webp", "kind": "image", "name": "w35h366apnrmr0cy8ytsh28jtr_preview_0-ezremove 1", "x": 960, "y": 105, "w": 881, "h": 975}]}, {"id": "379:959", "name": "20260751", "w": 1920, "h": 1080, "bg": "assets/s28-bg.webp", "items": [{"t": "img", "src": "assets/s28-00.webp", "kind": "text", "name": "?", "x": 655.07, "y": 71, "w": 726, "h": 920}, {"t": "img", "src": "assets/s28-01.webp", "kind": "text", "name": "?", "x": 481.48, "y": 156.2, "w": 118.9, "h": 148}, {"t": "img", "src": "assets/s28-02.webp", "kind": "text", "name": "?", "x": 177.8, "y": 588.8, "w": 244.1, "h": 312}, {"t": "img", "src": "assets/s28-03.webp", "kind": "text", "name": "Пишу о бизнесе и жизни в тг-канале", "x": 186.81, "y": 95.2, "w": 1523.8, "h": 174.34}, {"t": "img", "src": "assets/s28-04.webp", "kind": "image", "name": "20260211_1104_Айфон_на_белом_фоне_remix_01kh5vkkc6err88a0vcsm33myr__1_-removebg-preview 1", "x": 985, "y": 268, "w": 605.05, "h": 719.37}, {"t": "img", "src": "assets/s28-05.webp", "kind": "image", "name": "Снимок_экрана_2026-02-11_235533-removebg-preview 1", "x": 468, "y": 274, "w": 546, "h": 707}, {"t": "img", "src": "assets/s28-06.webp", "kind": "text", "name": "?", "x": 1704.8, "y": 501.8, "w": 215.2, "h": 312}]}];
+const RUBIK_SLIDE_ID = '372:550';
+
+const deck = document.getElementById('deck');
+let cur = 0;
+const built = {};
+
+function seeded(i){ const x = Math.sin(i * 9301 + 49297) * 233280; return x - Math.floor(x); }
+
+function buildSlide(i){
+  if (built[i]) return built[i];
+  const s = SLIDES[i];
+  const el = document.createElement('section');
+  el.className = 'slide';
+  el.style.width = s.w + 'px'; el.style.height = s.h + 'px';
+  const inner = document.createElement('div'); inner.className = 'inner'; el.appendChild(inner);
+  inner.style.backgroundImage = `url("${s.bg}")`;
+  let order = 0;
+  s.items.forEach((it, k) => {
+    const img = document.createElement('img');
+    img.src = it.src; img.alt = ''; img.draggable = false; img.decoding = 'async';
+    img.className = 'ly enter';
+    const r = seeded(i * 100 + k);
+    if (it.t === 'blend') {
+      img.classList.add('blend', 'fade', 'drift');
+      img.style.width = it.w + 'px'; img.style.height = it.h + 'px';
+      img.style.transform = `matrix(${it.m.join(',')})`;
+      img.style.mixBlendMode = it.blend;
+      img.style.setProperty('--op', it.op);
+      img.style.setProperty('--fd', (18 + r * 8).toFixed(1) + 's');
+      img.style.setProperty('--dx', '30px'); img.style.setProperty('--dy', '-20px'); img.style.setProperty('--dy2', '16px');
+      // фон лежит на .inner, поэтому color-burn смешивается с ним внутри одного контекста наложения
+      inner.appendChild(img);
+      return;
+    }
+    img.style.left = it.x + 'px'; img.style.top = it.y + 'px';
+    img.style.width = it.w + 'px'; img.style.height = it.h + 'px';
+    if (it.w * it.h > 0.45 * s.w * s.h) {
+      // картинка почти во весь слайд: без появления и покачивания, иначе из-под неё проступают скрытые слои
+      img.classList.remove('enter');
+    } else if (it.kind === 'blob') {
+      img.classList.add('fade', 'drift');
+      img.style.setProperty('--fd', (12 + r * 8).toFixed(1) + 's');
+      img.style.setProperty('--dx', (r > .5 ? 1 : -1) * (20 + r * 30) + 'px');
+      img.style.setProperty('--dy', (r > .3 ? -1 : 1) * (18 + r * 24) + 'px');
+      img.style.setProperty('--dy2', (10 + r * 20) + 'px');
+    } else {
+      img.style.setProperty('--d', Math.min(0.12 + order * 0.06, 1.1).toFixed(2) + 's');
+      order++;
+      if (it.kind === 'image') {
+        img.classList.add('float');
+        const big = it.w * it.h > 700000;
+        img.style.setProperty('--amp', (big ? 4 : 7 + r * 5).toFixed(1) + 'px');
+        img.style.setProperty('--rot', (big ? 0.3 : 0.6 + r * 1.2).toFixed(2) + 'deg');
+        img.style.setProperty('--fd', (5.5 + r * 3.5).toFixed(1) + 's');
+        img.style.setProperty('--fdel', (-r * 6).toFixed(1) + 's');
+      }
+    }
+    inner.appendChild(img);
+  });
+  if (s.id === RUBIK_SLIDE_ID) inner.appendChild(buildRubik());
+  if (s.custom && CAT_SCENES[s.custom]) inner.appendChild(buildCats(s));
+  deck.appendChild(el);
+  built[i] = el; fit(el, s);
+  return el;
+}
+
+function fit(el, s){
+  const k = Math.min(innerWidth / s.w, innerHeight / s.h);
+  el.style.transform = `scale(${k}) translate(-50%, -50%)`;
+}
+addEventListener('resize', () => Object.keys(built).forEach(i => fit(built[i], SLIDES[i])));
+
+function go(n){
+  n = Math.max(0, Math.min(SLIDES.length - 1, n));
+  if (n === cur && built[n] && built[n].classList.contains('active')) return;
+  const prev = built[cur];
+  const next = buildSlide(n);
+  if (prev && prev !== next) {
+    // leaving держит элементы видимыми, пока слайд гаснет; потом анимации сбрасываются и при возврате сыграют снова
+    prev.classList.add('leaving'); prev.classList.remove('active');
+    clearTimeout(prev._lt); prev._lt = setTimeout(() => prev.classList.remove('leaving'), 600);
+  }
+  clearTimeout(next._lt); next.classList.remove('leaving');
+  void next.offsetWidth;
+  next.classList.add('active');
+  cur = n;
+  [n + 1, n + 2, n - 1].forEach(j => { if (j >= 0 && j < SLIDES.length) buildSlide(j); });
+  document.getElementById('counter').textContent = `${n + 1} / ${SLIDES.length}`;
+  document.getElementById('bar').style.width = ((n + 1) / SLIDES.length * 100) + '%';
+  history.replaceState(null, '', '#' + (n + 1));
+}
+const next = () => go(cur + 1), prev = () => go(cur - 1);
+
+addEventListener('keydown', e => {
+  if (['ArrowRight','ArrowDown','PageDown',' ','Enter'].includes(e.key)) { e.preventDefault(); next(); }
+  else if (['ArrowLeft','ArrowUp','PageUp','Backspace'].includes(e.key)) { e.preventDefault(); prev(); }
+  else if (e.key === 'Home') go(0);
+  else if (e.key === 'End') go(SLIDES.length - 1);
+  else if (e.key === 'f' || e.key === 'F' || e.key === 'а' || e.key === 'А') {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen?.(); else document.exitFullscreen?.();
+  }
+});
+addEventListener('click', e => {
+  if (e.target.closest('.rubik-scene, .rubik-controls')) return;
+  if (e.shiftKey) prev(); else next();
+});
+addEventListener('contextmenu', e => { e.preventDefault(); prev(); });
+let wheelLock = 0;
+addEventListener('wheel', e => {
+  const t = Date.now(); if (t - wheelLock < 700 || Math.abs(e.deltaY) < 20) return;
+  wheelLock = t; e.deltaY > 0 ? next() : prev();
+}, { passive:true });
+let tx = null;
+addEventListener('touchstart', e => { if (!e.target.closest('.rubik-scene')) tx = e.touches[0].clientX; }, { passive:true });
+addEventListener('touchend', e => { if (tx === null) return; const dx = e.changedTouches[0].clientX - tx; tx = null; if (Math.abs(dx) > 50) dx < 0 ? next() : prev(); });
+
+let idleT;
+addEventListener('mousemove', () => {
+  document.body.classList.add('show-hud'); document.body.classList.remove('idle');
+  clearTimeout(idleT); idleT = setTimeout(() => document.body.classList.replace('show-hud', 'idle'), 2200);
+});
+
+/* ================= Кубик Рубика (CSS 3D) ================= */
+function buildRubik(){
+  const S = 118, GAP = 4, STEP = S + GAP;
+  const COLORS = { px:'#FF5A5F', nx:'#FF9F43', ny:'#FFFFFF', py:'#FFD93D', pz:'#3DDC97', nz:'#4D8BFF' };
+  const wrap = document.createElement('div'); wrap.className = 'rubik-wrap';
+  const scene = document.createElement('div'); scene.className = 'rubik-scene';
+  const cube = document.createElement('div'); cube.className = 'rubik';
+  cube.style.setProperty('--S', S + 'px');
+  scene.appendChild(cube); wrap.appendChild(scene);
+
+  const FACES = [
+    { n:[ 1,0,0], t:`rotateY(90deg) translateZ(${S/2}px)`,  key:'px' },
+    { n:[-1,0,0], t:`rotateY(-90deg) translateZ(${S/2}px)`, key:'nx' },
+    { n:[0, 1,0], t:`rotateX(-90deg) translateZ(${S/2}px)`, key:'py' },
+    { n:[0,-1,0], t:`rotateX(90deg) translateZ(${S/2}px)`,  key:'ny' },
+    { n:[0,0, 1], t:`translateZ(${S/2}px)`,                 key:'pz' },
+    { n:[0,0,-1], t:`rotateY(180deg) translateZ(${S/2}px)`, key:'nz' },
+  ];
+  const cubies = [];
+  for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) for (let z = -1; z <= 1; z++) {
+    const el = document.createElement('div'); el.className = 'cubie';
+    FACES.forEach(f => {
+      const fe = document.createElement('div'); fe.className = 'face';
+      fe.style.transform = f.t;
+      const outer = (f.n[0] && f.n[0] === x) || (f.n[1] && f.n[1] === y) || (f.n[2] && f.n[2] === z);
+      if (outer) { fe.classList.add('st'); fe.style.setProperty('--c', COLORS[f.key]); }
+      el.appendChild(fe);
+    });
+    cube.appendChild(el);
+    cubies.push({ el, p:[x, y, z], R:[[1,0,0],[0,1,0],[0,0,1]] });
+  }
+  const mat3 = R => `matrix3d(${R[0][0]},${R[1][0]},${R[2][0]},0,${R[0][1]},${R[1][1]},${R[2][1]},0,${R[0][2]},${R[1][2]},${R[2][2]},0,0,0,0,1)`;
+  const base = c => `translate3d(${c.p[0]*STEP}px,${c.p[1]*STEP}px,${c.p[2]*STEP}px) ${mat3(c.R)}`;
+  cubies.forEach(c => c.el.style.transform = base(c));
+
+  const rotM = (ax, d) => { // поворот на 90° * d вокруг оси ax, в системе координат CSS
+    const c = 0, s = d;
+    if (ax === 0) return [[1,0,0],[0,c,-s],[0,s,c]];
+    if (ax === 1) return [[c,0,s],[0,1,0],[-s,0,c]];
+    return [[c,-s,0],[s,c,0],[0,0,1]];
+  };
+  const mul = (A, B) => A.map((r, i) => [0,1,2].map(j => r[0]*B[0][j] + r[1]*B[1][j] + r[2]*B[2][j]));
+  const mv = (A, v) => A.map(r => r[0]*v[0] + r[1]*v[1] + r[2]*v[2]);
+  const AX = ['rotateX', 'rotateY', 'rotateZ'];
+
+  let busy = false; const queue = []; let history = [];
+  function turn(ax, layer, d, ms){
+    return new Promise(res => {
+      const group = cubies.filter(c => c.p[ax] === layer);
+      const t0 = performance.now();
+      const ease = t => t < .5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2;
+      (function step(now){
+        const k = Math.min(1, (now - t0) / ms), a = 90 * d * ease(k);
+        group.forEach(c => c.el.style.transform = `${AX[ax]}(${a}deg) ${base(c)}`);
+        if (k < 1) return requestAnimationFrame(step);
+        const M = rotM(ax, d);
+        group.forEach(c => { c.p = mv(M, c.p).map(Math.round); c.R = mul(M, c.R); c.el.style.transform = base(c); });
+        res();
+      })(t0);
+    });
+  }
+  async function run(moves, ms){
+    busy = true; setBtns();
+    for (const m of moves) await turn(m[0], m[1], m[2], ms);
+    busy = false; setBtns();
+  }
+
+  // вид: вращение мышью + медленное авто-вращение
+  let rx = -28, ry = 38, vx = 0, vy = 0, drag = null, lastTouch = 0;
+  let moved = 0;
+  scene.addEventListener('pointerdown', e => { drag = { x:e.clientX, y:e.clientY }; moved = 0; scene.setPointerCapture(e.pointerId); lastTouch = Date.now(); });
+  scene.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag = { x:e.clientX, y:e.clientY }; moved += Math.abs(dx) + Math.abs(dy);
+    vy = dx * 0.35; vx = -dy * 0.35; ry += vy; rx += vx; rx = Math.max(-80, Math.min(80, rx)); lastTouch = Date.now();
+  });
+  scene.addEventListener('pointerup', () => { drag = null; });
+  scene.addEventListener('click', e => { e.stopPropagation(); if (moved < 6) roll(); });
+  (function loop(){
+    if (!drag) {
+      vx *= 0.92; vy *= 0.92; rx += vx; ry += vy;
+      if (Date.now() - lastTouch > 2500) { ry += 0.18; rx += (-28 - rx) * 0.01; }
+    }
+    cube.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg)`;
+    requestAnimationFrame(loop);
+  })();
+
+  const ctr = document.createElement('div'); ctr.className = 'rubik-controls';
+  const bMix = document.createElement('button'); bMix.className = 'rubik-btn primary'; bMix.textContent = 'Перемешать';
+  const bSolve = document.createElement('button'); bSolve.className = 'rubik-btn'; bSolve.textContent = 'Собрать';
+  ctr.append(bMix, bSolve); wrap.appendChild(ctr);
+  const hint = document.createElement('div'); hint.className = 'rubik-hint'; hint.textContent = 'Нажмите на кубик или покрутите его мышкой';
+
+  // фразы выпадают без повторов, пока не закончится весь список
+  const PHRASES = ['Подписка (Subscription)','Freemium','Бесплатный продукт + реклама','Разовая покупка','Комиссионная модель (Marketplace)',
+    'Транзакционная модель','Pay-per-use','Лицензирование','Франшиза','Роялти','Аренда','Лизинг','Прямые продажи','Дистрибуция',
+    'Оптовая модель','Розничная модель','D2C','B2B','B2C','C2C','B2B2C','SaaS','PaaS','IaaS','API-as-a-Service','Usage-based pricing',
+    'Outcome-based pricing','Lead generation','Affiliate marketing','Dropshipping','Print-on-demand','Crowdfunding','Донаты',
+    'Партнерская модель','White label','Private label','Open core','Marketplace','On-demand','Sharing economy','Razor-and-blades',
+    'Loss leader','Hidden revenue','Pay-what-you-want','Bundling','Cross-subsidization','Data monetization','Attention economy',
+    'Auction','Bidding','Membership','Managed services','Professional services','Agency model','Consulting','Contract manufacturing',
+    'Manufacturing-as-a-Service (MaaS)','Product-as-a-Service (PaaS)','Everything-as-a-Service (XaaS)'];
+  let bag = [], lastPhrase = '';
+  const pick = () => {
+    if (!bag.length) { bag = PHRASES.slice(); for (let i = bag.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [bag[i], bag[j]] = [bag[j], bag[i]]; }
+      if (bag[bag.length - 1] === lastPhrase) bag.unshift(bag.pop()); }
+    return lastPhrase = bag.pop();
+  };
+  const slot = document.createElement('div'); slot.className = 'rubik-phrase-slot';
+  const phrase = document.createElement('div'); phrase.className = 'rubik-phrase idle show'; phrase.textContent = 'Нажмите на кубик, чтобы выпала бизнес-модель';
+  slot.appendChild(phrase); wrap.insertBefore(slot, scene);
+  const randomMoves = n => { const moves = []; let lastAx = -1;
+    for (let i = 0; i < n; i++) { let ax; do { ax = Math.floor(Math.random() * 3); } while (ax === lastAx); lastAx = ax;
+      moves.push([ax, [-1, 0, 1][Math.floor(Math.random() * 3)], Math.random() < .5 ? 1 : -1]); }
+    return moves; };
+  async function roll(){
+    if (busy) return;
+    phrase.classList.remove('show');
+    vy += 14; // лёгкий «бросок» кубика
+    const moves = randomMoves(6); history = history.concat(moves);
+    await run(moves, 110);
+    phrase.classList.remove('idle'); phrase.textContent = pick();
+    void phrase.offsetWidth; phrase.classList.add('show');
+  }
+  wrap.appendChild(hint);
+  function setBtns(){ bMix.disabled = busy; bSolve.disabled = busy || !history.length; }
+  setBtns();
+  bMix.addEventListener('click', e => {
+    e.stopPropagation(); if (busy) return;
+    const moves = randomMoves(20);
+    history = history.concat(moves); run(moves, 190);
+  });
+  bSolve.addEventListener('click', e => {
+    e.stopPropagation(); if (busy || !history.length) return;
+    const moves = history.slice().reverse().map(m => [m[0], m[1], -m[2]]); history = [];
+    run(moves, 140);
+  });
+  [bMix, bSolve].forEach(b => b.addEventListener('pointerdown', e => e.stopPropagation()));
+  return wrap;
+}
+
+/* ================= Анимированные картинки с котами ================= */
+// Координаты заданы в пикселях исходной картинки (IW×IH) и пересчитываются в размер слайда.
+const CAT_SCENES = {
+  // «Коты строят дом»
+  cats: {
+    IW:1672, IH:941, brick:{ tex:'assets/mc-brick.webp', w:96, h:56 },
+    parts: [
+      { r:[505, 45, 195, 195],   o:'50% 100%', an:'catSway',   dur:'2.4s', v:{ '--r':'2deg', '--a':'3px' } },            // кот на крыше
+      { r:[150, 440, 205, 290],  o:'50% 100%', an:'catBob',    dur:'1.4s', v:{ '--a':'3px' } },                           // рыжий кот
+      { r:[318, 478, 170, 130],  o:'0% 60%',   an:'catPush',   dur:'1.4s', v:{ '--px':'9px', '--py':'-5px' } },           // рыжий кот двигает кирпич
+      { r:[405, 540, 265, 305],  o:'50% 100%', an:'catSway',   dur:'1.8s', del:'-.4s', v:{ '--r':'1deg', '--a':'3px' } }, // тёмный кот спиной
+      { r:[505, 555, 165, 140],  o:'50% 100%', an:'catPush',   dur:'.9s',  v:{ '--px':'5px', '--py':'-3px' } },           // его лапы на кирпиче
+      { r:[995, 200, 195, 195],  o:'50% 100%', an:'catBob',    dur:'.7s',  v:{ '--a':'2px' } },                           // кот с молотком
+      { r:[905, 250, 115, 90],   o:'92% 62%',  an:'catHammer', dur:'.7s' },                                               // рука с молотком
+      { r:[1090, 245, 62, 62],   o:'30% 100%', an:'catWave',   dur:'.9s',  v:{ '--r':'14deg' } },                         // поднятая лапка
+      { r:[1040, 570, 375, 335], o:'50% 100%', an:'catWalk',   dur:'1.1s' },                                              // кот несёт кирпич
+      { r:[1045, 650, 190, 150], o:'50% 50%',  an:'catBob',    dur:'.55s', del:'-.2s', v:{ '--a':'3px' } },               // его кирпич
+      { r:[1345, 675, 65, 65],   o:'20% 90%',  an:'catWave',   dur:'.8s',  v:{ '--r':'16deg' } },                         // его лапка
+    ],
+    flights: [ { from:[430, 470], to:[405, 200], top:60, dur:4.2, del:0 }, { from:[1120, 640], to:[880, 300], top:170, dur:4.8, del:-2.1 } ],
+    glows: [[615, 492, 90], [678, 482, 90], [914, 516, 80], [1424, 398, 230]],
+    sparks: { x:[1300, 1560], y:[575, 645], n:16 },
+    petals: { n:26, areas:[[0, 0, 460, 260], [1480, 150, 190, 200]] },
+  },
+  // «Коты строят офисы»
+  cats2: {
+    IW:1672, IH:941, brick:{ tex:'assets/mc-cube.webp', w:58, h:58 },
+    parts: [
+      { r:[90, 480, 190, 190],   o:'90% 90%',  an:'catWave',   dur:'1.6s', v:{ '--r':'7deg' } },                          // хвост большого кота
+      { r:[320, 160, 370, 330],  o:'50% 100%', an:'catSway',   dur:'2.6s', v:{ '--r':'1.5deg', '--a':'4px' } },           // большой кот
+      { r:[390, 425, 200, 110],  o:'50% 100%', an:'catPush',   dur:'1.3s', v:{ '--px':'6px', '--py':'-6px' } },           // его лапы с кубиком
+      { r:[660, 30, 310, 300],   o:'50% 100%', an:'catBob',    dur:'1.2s', v:{ '--a':'5px' } },                           // чёрный кот на лестнице
+      { r:[815, 215, 175, 110],  o:'10% 75%',  an:'catHammer', dur:'.75s' },                                              // молоток
+      { r:[1165, 105, 350, 260], o:'50% 100%', an:'catHover',  dur:'2.2s', v:{ '--a':'12px' } },                          // рыжий кот парит с кирпичом
+      { r:[1095, 500, 215, 200], o:'50% 100%', an:'catSway',   dur:'2s',   v:{ '--r':'2deg', '--a':'2px' } },             // белый кот
+      { r:[1000, 600, 330, 290], o:'50% 100%', an:'catSway',   dur:'2.8s', del:'-.7s', v:{ '--r':'1.2deg', '--a':'3px' } }, // чертёж
+      { r:[1340, 740, 110, 110], o:'30% 90%',  an:'catWave',   dur:'.9s',  v:{ '--r':'10deg' } },                         // лапка белого кота
+    ],
+    flights: [ { from:[1000, 860], to:[990, 318], top:150, dur:4.4, del:0 }, { from:[1060, 870], to:[1330, 318], top:120, dur:5, del:-1.7 },
+               { from:[470, 870], to:[600, 470], top:330, dur:4.6, del:-3.2 } ],
+    floaters: [[620, 120, 46], [1110, 150, 40], [1590, 280, 52], [250, 390, 44], [760, 600, 36]],
+    glows: [[545, 732, 70], [850, 520, 70], [1008, 520, 60], [1420, 392, 150], [1665, 205, 240]],
+    leds: { x:[1395, 1470], y:[545, 650], n:18 },
+    steam: [155, 700],
+    sparks: { x:[1540, 1665], y:[520, 600], n:10 },
+    petals: { n:18, areas:[[0, 20, 160, 330], [1450, 60, 170, 160]] },
+  },
+};
+
+function buildCats(s){
+  const C = CAT_SCENES[s.custom];
+  const layer = document.createElement('div'); layer.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+  const kx = s.w / C.IW, ky = s.h / C.IH;
+  const P = (x, y) => [x * kx, y * ky];
+  const add = (cls, css, vars) => { const d = document.createElement('div'); d.className = cls; Object.assign(d.style, css || {});
+    Object.entries(vars || {}).forEach(([k, v]) => d.style.setProperty(k, v)); layer.appendChild(d); return d; };
+  // куски той же картинки поверх оригинала: лапы, кирпичи, коты
+  C.parts.forEach(p => {
+    const [x, y, w, h] = p.r;
+    add('cats-part', { left:x * kx + 'px', top:y * ky + 'px', width:w * kx + 'px', height:h * ky + 'px',
+      backgroundImage:`url("${s.bg}")`, backgroundSize:`${s.w}px ${s.h}px`, backgroundPosition:`${-x * kx}px ${-y * ky}px`, transformOrigin:p.o },
+      Object.assign({ '--an':p.an, '--dur':p.dur }, p.del ? { '--del':p.del } : {}, p.v || {}));
+  });
+  const brickEl = () => { const br = document.createElement('div'); br.className = 'mc-brick';
+    br.style.width = C.brick.w + 'px'; br.style.height = C.brick.h + 'px';
+    const i = document.createElement('i'); i.style.backgroundImage = `url("${C.brick.tex}")`; br.appendChild(i); return br; };
+  // кирпичи летят к стройке и встают на место
+  (C.flights || []).forEach(b => {
+    const f = P(...b.from), t = P(...b.to), T = { '--dur':b.dur + 's', '--del':b.del + 's' };
+    const w = add('mc-fly', {}, Object.assign({ '--x0':f[0] + 'px', '--x1':t[0] + 'px' }, T));
+    const br = brickEl(); w.appendChild(br);
+    Object.entries(Object.assign({ '--y0':f[1] + 'px', '--y1':t[1] + 'px', '--yt':b.top * ky + 'px' }, T)).forEach(([k, v]) => br.style.setProperty(k, v));
+    for (let i = 0; i < 6; i++) {
+      const ang = Math.PI * (1 + i / 5);
+      add('mc-dust', { left:(t[0] + C.brick.w / 2 - 6 + (i - 2.5) * 11) + 'px', top:(t[1] + C.brick.h - 8) + 'px' },
+        Object.assign({ '--dx':Math.cos(ang) * 46 + 'px', '--dy':(Math.sin(ang) * 30 - 6) + 'px' }, T));
+    }
+  });
+  // кубики, парящие в воздухе
+  (C.floaters || []).forEach(([x, y, sz], i) => {
+    const c = P(x, y);
+    const f = add('mc-floater', { left:c[0] + 'px', top:c[1] + 'px' },
+      { '--dur':(3.2 + seeded(i + 50) * 2).toFixed(2) + 's', '--del':(-seeded(i + 60) * 4).toFixed(2) + 's', '--rot':(6 + seeded(i + 70) * 10).toFixed(1) + 'deg' });
+    const br = brickEl(); br.style.width = br.style.height = sz + 'px'; br.style.position = 'relative'; f.appendChild(br);
+  });
+  // фонари, солнце, светящиеся значки
+  (C.glows || []).forEach(([x, y, r], i) => {
+    const c = P(x, y), R = r * kx;
+    add('mc-glow', { left:c[0] - R / 2 + 'px', top:c[1] - R / 2 + 'px', width:R + 'px', height:R + 'px' },
+      { '--dur':(2.2 + i * .5) + 's', '--del':(-i * .7) + 's' });
+  });
+  // огоньки серверов
+  if (C.leds) for (let i = 0; i < C.leds.n; i++) {
+    const c = P(C.leds.x[0] + seeded(i + 300) * (C.leds.x[1] - C.leds.x[0]), C.leds.y[0] + seeded(i + 400) * (C.leds.y[1] - C.leds.y[0]));
+    add('mc-led', { left:c[0] + 'px', top:c[1] + 'px' }, { '--dur':(0.6 + seeded(i + 500) * 1.4).toFixed(2) + 's', '--del':(-seeded(i + 600) * 2).toFixed(2) + 's' });
+  }
+  // пар из кружки
+  if (C.steam) for (let i = 0; i < 3; i++) {
+    const c = P(...C.steam);
+    add('mc-steam', { left:c[0] - 20 + i * 14 + 'px', top:c[1] - 40 + 'px' }, { '--del':(-i * 1.1) + 's' });
+  }
+  // блики на воде
+  if (C.sparks) for (let i = 0; i < C.sparks.n; i++) {
+    const c = P(C.sparks.x[0] + seeded(i + 7) * (C.sparks.x[1] - C.sparks.x[0]), C.sparks.y[0] + seeded(i + 31) * (C.sparks.y[1] - C.sparks.y[0]));
+    add('mc-spark', { left:c[0] + 'px', top:c[1] + 'px' },
+      { '--dur':(1.6 + seeded(i + 3) * 1.8).toFixed(2) + 's', '--del':(-seeded(i + 11) * 3).toFixed(2) + 's' });
+  }
+  // падающие пиксельные лепестки
+  const PET = ['#f7c3ec', '#eeb0f2', '#ffd6f4', '#d9a6ff'];
+  if (C.petals) for (let i = 0; i < C.petals.n; i++) {
+    const a = C.petals.areas[i % C.petals.areas.length], r1 = seeded(i + 101), r2 = seeded(i + 202);
+    const x0 = a[0] + r1 * a[2], y0 = a[1] + r2 * a[3];
+    const c0 = P(x0, y0), c1 = P(x0 + 140 + r2 * 160, y0 + 480 + r1 * 260), sz = 9 + r1 * 8;
+    add('mc-petal', { background:PET[i % PET.length], width:sz + 'px', height:sz + 'px' },
+      { '--x0':c0[0] + 'px', '--y0':c0[1] + 'px', '--x1':c1[0] + 'px', '--y1':c1[1] + 'px',
+        '--rot':(180 + r2 * 360).toFixed(0) + 'deg', '--dur':(7 + r2 * 6).toFixed(1) + 's', '--del':(-r1 * 12).toFixed(1) + 's' });
+  }
+  return layer;
+}
+
+go(Math.max(0, Math.min(SLIDES.length - 1, (parseInt(location.hash.slice(1)) || 1) - 1)));
+</script>
+</body>
+</html>
