@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Бильярдная книжка</title>
+<meta name="description" content="Мини-игра: шар катится по страницам бильярдной книжки. По открытию Виктории Ведюшкиной.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{ --bg:#050608; --blue:#2F3BE6; --felt:#1d7a3c; --lime:#B8F23A; --ink:#E9ECF5; --muted:#8C93A8; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; background:var(--bg); color:var(--ink); font-family:Montserrat, system-ui, sans-serif; }
+  body{
+    min-height:100vh;
+    background-image:
+      linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+    background-size:40px 40px;
+  }
+  .wrap{ max-width:1180px; margin:0 auto; padding:28px 16px 48px; }
+  .tag{ display:inline-block; background:var(--blue); color:#fff; font-weight:700; padding:8px 14px; font-size:15px; }
+  h1{ font-size:clamp(28px,4.4vw,48px); line-height:1.1; margin:14px 0 8px; font-weight:800; }
+  .lead{ color:var(--muted); font-size:16px; line-height:1.5; max-width:760px; margin:0 0 18px; }
+  .hud{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:0 0 12px; }
+  .chip{ border:1px solid rgba(255,255,255,.18); padding:8px 12px; font-size:14px; font-weight:600; }
+  .chip b{ color:var(--lime); }
+  .btn{ background:var(--blue); color:#fff; border:0; padding:10px 16px; font:700 14px Montserrat, sans-serif; cursor:pointer; }
+  .btn.ghost{ background:transparent; border:1px solid rgba(255,255,255,.3); }
+  .btn:disabled{ opacity:.35; cursor:default; }
+  .stage{ position:relative; border:1px solid rgba(255,255,255,.12); background:rgba(0,0,0,.35); touch-action:none; }
+  canvas{ display:block; width:100%; height:auto; }
+  .toast{ position:absolute; left:50%; top:14px; transform:translateX(-50%); background:var(--blue); color:#fff; font-weight:700;
+          padding:8px 14px; font-size:14px; opacity:0; transition:opacity .25s; pointer-events:none; white-space:nowrap; }
+  .toast.on{ opacity:1; }
+  .win{ position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(5,6,8,.72); }
+  .win.on{ display:flex; }
+  .win .box{ background:#0d1020; border:1px solid var(--blue); padding:24px 26px; max-width:440px; text-align:center; }
+  .win h2{ margin:0 0 8px; font-size:26px; }
+  .win p{ color:var(--muted); margin:0 0 16px; line-height:1.5; }
+  .grid{ display:grid; grid-template-columns:1.2fr 1fr; gap:18px; margin-top:22px; }
+  .card{ border:1px solid rgba(255,255,255,.12); padding:18px 20px; background:rgba(0,0,0,.4); }
+  .card h3{ margin:0 0 10px; font-size:18px; }
+  .card p{ margin:0 0 10px; color:#C9CEDC; line-height:1.55; font-size:15px; }
+  .card .tag{ font-size:13px; padding:6px 10px; margin-bottom:10px; }
+  ol{ margin:0; padding-left:20px; color:#C9CEDC; line-height:1.6; font-size:15px; }
+  .src{ color:var(--muted); font-size:12px; margin-top:18px; }
+  @media (max-width:760px){ .grid{ grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="tag">Открытие Виктории Ведюшкиной</span>
+  <h1>Бильярдная книжка</h1>
+  <p class="lead">Каждая страница книги это отдельный бильярдный стол. Шар, который доехал до корешка, отражается и продолжает путь уже на соседней странице. Загоните шар в лузу: она есть только на одной странице.</p>
+
+  <div class="hud">
+    <span class="chip">Уровень <b id="lvl">1</b> из 3</span>
+    <span class="chip">Ударов: <b id="shots">0</b></span>
+    <span class="chip">Шар на странице <b id="page">1</b></span>
+    <span class="chip">Переходов через корешок: <b id="jumps">0</b></span>
+    <button class="btn ghost" id="reset">Заново</button>
+  </div>
+
+  <p class="lead" id="hint" style="color:#B8F23A;margin:0 0 12px;font-weight:600"></p>
+  <div class="stage" id="stage">
+    <canvas id="cv" width="1200" height="460"></canvas>
+    <div class="toast" id="toast">Шар перешел на страницу 2</div>
+    <div class="win" id="win"><div class="box">
+      <h2 id="winT">Есть!</h2>
+      <p id="winP"></p>
+      <button class="btn" id="next">Следующий уровень</button>
+    </div></div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <span class="tag">Как играть</span>
+      <ol>
+        <li>Потяните от шара в сторону, противоположную удару, как рогатку. Чем длиннее линия, тем сильнее удар.</li>
+        <li>Отпустите: шар покатится и будет отражаться от бортов.</li>
+        <li>Синий край каждой страницы это корешок книги. Шар у корешка отражается и переходит на следующую страницу: с первой на вторую, со второй на третью, с третьей на первую.</li>
+        <li>Цель: попасть в лузу, отмеченную зеленым кольцом.</li>
+      </ol>
+    </div>
+    <div class="card">
+      <span class="tag">Зачем это нужно</span>
+      <p>Виктория Ведюшкина исследует такие модели, чтобы описывать движение вращающихся тел, например волчков и гироскопов. Сложные процессы ученая предлагает представлять как путь шарика по страницам книги.</p>
+      <p>Спутники и космические станции тоже вращаются, а их детали могут менять положение. Чем точнее ученые рассчитывают такие движения, тем крепче можно проектировать космическую технику.</p>
+    </div>
+  </div>
+  <p class="src">Упрощенная учебная модель: все страницы склеены по одному корешку, шар переходит на следующую страницу по кругу. В настоящих бильярдных книжках порядок перехода задается перестановкой страниц.</p>
+</div>
+
+<script>
+(function(){
+  // ── геометрия страниц: единичные координаты, y вниз; корешок — отрезок x=0, y∈[0.1;0.9]
+  var PAGES=[
+    {name:'Страница 1', poly:[[0,.1],[.95,.1],[.95,.9],[0,.9]]},
+    {name:'Страница 2', poly:[[0,.1],[.55,0],[.96,.3],[.96,.7],[.55,1],[0,.9]]},
+    {name:'Страница 3', poly:[[0,.1],[.7,.04],[.98,.5],[.7,.96],[0,.9]]}
+  ];
+  var LEVELS=[
+    {page:2, pocket:[.78,.5], hint:'Луза на третьей странице. Шару нужно дважды пройти через корешок.'},
+    {page:1, pocket:[.62,.86], hint:'Луза на второй странице, у нижнего борта.'},
+    {page:0, pocket:[.2,.22], minJumps:3, hint:'Луза на первой странице, но откроется, только когда шар обойдет всю книгу.'}
+  ];
+  var START=[.6,.5], BALL_R=.022, POCKET_R=.05, FRICTION=.33, MAXV=2.6;
+
+  // предрасчет ребер с внутренними нормалями
+  PAGES.forEach(function(p){
+    var P=p.poly, n=P.length, cx=0, cy=0; P.forEach(function(v){ cx+=v[0]/n; cy+=v[1]/n; });
+    p.edges=[];
+    for(var i=0;i<n;i++){
+      var a=P[i], b=P[(i+1)%n], dx=b[0]-a[0], dy=b[1]-a[1], L=Math.hypot(dx,dy);
+      var nx=-dy/L, ny=dx/L;
+      if((cx-a[0])*nx+(cy-a[1])*ny<0){ nx=-nx; ny=-ny; }
+      p.edges.push({a:a, b:b, nx:nx, ny:ny, spine:(a[0]===0 && b[0]===0)});
+    }
+  });
+
+  var cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+  var el={lvl:document.getElementById('lvl'), shots:document.getElementById('shots'), page:document.getElementById('page'),
+          jumps:document.getElementById('jumps'), hint:document.getElementById('hint'), toast:document.getElementById('toast'), win:document.getElementById('win'),
+          winT:document.getElementById('winT'), winP:document.getElementById('winP'), next:document.getElementById('next')};
+  var state, layout;
+
+  function newLevel(i){
+    state={level:i, page:0, pos:START.slice(), vel:[0,0], moving:false, shots:0, jumps:0, trails:[[],[],[]], aim:null, done:false};
+    state.trails[0].push(START.slice());
+    el.win.classList.remove('on'); upd();
+  }
+  function upd(){
+    el.lvl.textContent=state.level+1; el.shots.textContent=state.shots;
+    el.page.textContent=state.page+1; el.jumps.textContent=state.jumps;
+    el.hint.textContent=LEVELS[state.level].hint;
+  }
+  var tt=null;
+  function toast(t){ el.toast.textContent=t; el.toast.classList.add('on'); clearTimeout(tt); tt=setTimeout(function(){ el.toast.classList.remove('on'); },1300); }
+
+  // ── раскладка: 3 квадратные страницы в ряд или столбиком на узком экране
+  function computeLayout(){
+    var cssW=cv.parentElement.clientWidth, vertical=cssW<700;
+    var dpr=Math.min(window.devicePixelRatio||1, 2), pad=24, gap=vertical?28:36, s;
+    if(vertical){ s=Math.min(cssW-pad*2, Math.max(190, (window.innerHeight*.86-pad*2-gap*2)/3));
+      cv.style.height=(pad*2+s*3+gap*2)+'px'; cv.width=cssW*dpr; cv.height=(pad*2+s*3+gap*2)*dpr; }
+    else { s=Math.min((cssW-pad*2-gap*2)/3, 380); var h=pad*2+s+18; cv.style.height=h+'px'; cv.width=cssW*dpr; cv.height=h*dpr; }
+    var boxes=[];
+    for(var i=0;i<3;i++){
+      if(vertical) boxes.push({x:(cssW-s)/2, y:pad+i*(s+gap), s:s});
+      else { var total=s*3+gap*2, x0=(cssW-total)/2; boxes.push({x:x0+i*(s+gap), y:pad+10, s:s}); }
+    }
+    layout={boxes:boxes, dpr:dpr, vertical:vertical};
+  }
+  function toScreen(pi, p){ var b=layout.boxes[pi]; return [b.x+p[0]*b.s, b.y+p[1]*b.s]; }
+  function toUnit(pi, x, y){ var b=layout.boxes[pi]; return [(x-b.x)/b.s, (y-b.y)/b.s]; }
+
+  // ── физика
+  function inside(p, pt){ return p.edges.every(function(e){ return (pt[0]-e.a[0])*e.nx+(pt[1]-e.a[1])*e.ny>=0; }); }
+  function step(dt){
+    var pg=PAGES[state.page], v=state.vel;
+    state.pos[0]+=v[0]*dt; state.pos[1]+=v[1]*dt;
+    // самое «нарушенное» ребро
+    for(var guard=0; guard<3; guard++){
+      var worst=null, wd=0;
+      pg.edges.forEach(function(e){
+        var d=(state.pos[0]-e.a[0])*e.nx+(state.pos[1]-e.a[1])*e.ny;
+        if(d<wd){ wd=d; worst=e; }
+      });
+      if(!worst) break;
+      // отражение: позиция и скорость
+      state.pos[0]-=2*wd*worst.nx; state.pos[1]-=2*wd*worst.ny;
+      var vn=v[0]*worst.nx+v[1]*worst.ny;
+      v[0]-=2*vn*worst.nx; v[1]-=2*vn*worst.ny;
+      if(worst.spine){
+        state.trails[state.page].push(state.pos.slice(), null);
+        state.page=(state.page+1)%3; state.jumps++;
+        state.trails[state.page].push(state.pos.slice());
+        pg=PAGES[state.page];
+        toast('Шар перешел на страницу '+(state.page+1)); upd();
+      }
+    }
+    var k=Math.exp(-FRICTION*dt); v[0]*=k; v[1]*=k;
+    var tr=state.trails[state.page], last=tr[tr.length-1];
+    if(!last || Math.hypot(last[0]-state.pos[0], last[1]-state.pos[1])>.012) tr.push(state.pos.slice());
+    var L=LEVELS[state.level];
+    if(state.page===L.page && state.jumps>=(L.minJumps||0) && Math.hypot(state.pos[0]-L.pocket[0], state.pos[1]-L.pocket[1])<POCKET_R){
+      state.moving=false; state.done=true; showWin(); return;
+    }
+    if(Math.hypot(v[0],v[1])<.035){ state.moving=false; v[0]=v[1]=0; }
+  }
+  function showWin(){
+    var last=state.level===LEVELS.length-1;
+    el.winT.textContent=last?'Книжка пройдена!':'Есть!';
+    el.winP.textContent='Ударов: '+state.shots+'. Переходов через корешок: '+state.jumps+'.'+(last?' Попробуйте пройти уровни меньшим числом ударов.':'');
+    el.next.textContent=last?'Сыграть сначала':'Следующий уровень';
+    el.win.classList.add('on');
+  }
+
+  // ── отрисовка
+  function felt(){
+    var c=document.createElement('canvas'); c.width=c.height=128; var g=c.getContext('2d');
+    g.fillStyle='#1d7a3c'; g.fillRect(0,0,128,128);
+    for(var i=0;i<2600;i++){ g.fillStyle='rgba('+(Math.random()<.5?'0,0,0':'255,255,255')+','+(Math.random()*.08)+')'; g.fillRect(Math.random()*128, Math.random()*128, 1, 1); }
+    return c;
+  }
+  var feltPat=null;
+  function pathPoly(pi){
+    var P=PAGES[pi].poly; ctx.beginPath();
+    P.forEach(function(v,i){ var s=toScreen(pi,v); if(i) ctx.lineTo(s[0],s[1]); else ctx.moveTo(s[0],s[1]); });
+    ctx.closePath();
+  }
+  function drawPage(pi){
+    var b=layout.boxes[pi], active=(pi===state.page);
+    ctx.save();
+    // борт: белая сетка
+    pathPoly(pi); ctx.lineJoin='round'; ctx.lineWidth=b.s*.06; ctx.strokeStyle='#f2f4f8'; ctx.stroke();
+    ctx.lineWidth=b.s*.06-6; ctx.setLineDash([2,4]); ctx.strokeStyle='#1a1a1a'; ctx.stroke(); ctx.setLineDash([]);
+    // сукно
+    pathPoly(pi); ctx.fillStyle=feltPat; ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle='rgba(0,0,0,.6)'; ctx.stroke();
+    // корешок
+    var a=toScreen(pi,[0,.1]), c=toScreen(pi,[0,.9]);
+    ctx.lineWidth=Math.max(6,b.s*.035); ctx.strokeStyle='#2F3BE6'; ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(c[0],c[1]); ctx.stroke();
+    // луза
+    var L=LEVELS[state.level];
+    if(L.page===pi){
+      var p=toScreen(pi,L.pocket), r=POCKET_R*b.s;
+      ctx.fillStyle='#000'; ctx.beginPath(); ctx.arc(p[0],p[1],r,0,Math.PI*2); ctx.fill();
+      var open=state.jumps>=(L.minJumps||0);
+      ctx.lineWidth=3; ctx.strokeStyle=open?'#B8F23A':'rgba(255,255,255,.35)'; ctx.setLineDash(open?[]:[5,5]);
+      ctx.beginPath(); ctx.arc(p[0],p[1],r+5,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+      if(!open){ ctx.font='600 12px Montserrat, sans-serif'; ctx.fillStyle='rgba(255,255,255,.75)'; ctx.textBaseline='top';
+        ctx.fillText('откроется после '+(L.minJumps-state.jumps)+' перех.', p[0]-r, p[1]+r+10); }
+    }
+    // след
+    var tr=state.trails[pi];
+    ctx.setLineDash([7,6]); ctx.lineWidth=2; ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.beginPath();
+    var pen=false;
+    tr.forEach(function(pt){ if(!pt){ pen=false; return; } var s=toScreen(pi,pt); if(pen) ctx.lineTo(s[0],s[1]); else { ctx.moveTo(s[0],s[1]); pen=true; } });
+    ctx.stroke(); ctx.setLineDash([]);
+    // затемнение неактивной страницы
+    if(!active){ pathPoly(pi); ctx.fillStyle='rgba(5,6,8,.38)'; ctx.fill(); }
+    ctx.restore();
+    // подпись
+    ctx.font='700 14px Montserrat, sans-serif'; ctx.textBaseline='top';
+    var label=PAGES[pi].name+(active?' · шар здесь':''), tw=ctx.measureText(label).width;
+    var ly=layout.vertical? b.y-24 : b.y+b.s+4;
+    ctx.fillStyle=active?'#2F3BE6':'rgba(255,255,255,.12)'; ctx.fillRect(b.x, ly, tw+16, 22);
+    ctx.fillStyle='#fff'; ctx.fillText(label, b.x+8, ly+4);
+  }
+  function drawBall(){
+    var b=layout.boxes[state.page], p=toScreen(state.page, state.pos), r=BALL_R*b.s;
+    var g=ctx.createRadialGradient(p[0]-r*.4,p[1]-r*.4,r*.2,p[0],p[1],r);
+    g.addColorStop(0,'#ffffff'); g.addColorStop(1,'#cfd3dc');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(p[0],p[1],r,0,Math.PI*2); ctx.fill();
+    // скобки прицела
+    var q=r+8, l=7; ctx.strokeStyle='#2F3BE6'; ctx.lineWidth=3;
+    [[-1,-1],[1,-1],[1,1],[-1,1]].forEach(function(s){
+      ctx.beginPath(); ctx.moveTo(p[0]+s[0]*q, p[1]+s[1]*(q-l)); ctx.lineTo(p[0]+s[0]*q, p[1]+s[1]*q); ctx.lineTo(p[0]+s[0]*(q-l), p[1]+s[1]*q); ctx.stroke();
+    });
+    // прицел
+    if(state.aim){
+      var d=state.aim, tx=p[0]-d[0], ty=p[1]-d[1];
+      ctx.strokeStyle='#B8F23A'; ctx.lineWidth=3; ctx.setLineDash([10,7]);
+      ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.lineTo(tx,ty); ctx.stroke(); ctx.setLineDash([]);
+      ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.lineTo(p[0]+d[0],p[1]+d[1]); ctx.stroke();
+    }
+  }
+  function draw(){
+    var dpr=layout.dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,cv.width,cv.height);
+    if(!feltPat) feltPat=ctx.createPattern(felt(),'repeat');
+    for(var i=0;i<3;i++) drawPage(i);
+    drawBall();
+  }
+
+  // ── управление: тянем от шара (рогатка)
+  var drag=null;
+  function ptr(e){ var r=cv.getBoundingClientRect(); return [e.clientX-r.left, e.clientY-r.top]; }
+  cv.addEventListener('pointerdown', function(e){
+    if(state.moving||state.done) return;
+    var m=ptr(e), p=toScreen(state.page, state.pos), b=layout.boxes[state.page];
+    if(Math.hypot(m[0]-p[0], m[1]-p[1]) < Math.max(40, b.s*.12)){ drag={x:m[0], y:m[1]}; cv.setPointerCapture(e.pointerId); state.aim=[0,0]; }
+  });
+  cv.addEventListener('pointermove', function(e){
+    if(!drag) return; var m=ptr(e), p=toScreen(state.page, state.pos);
+    var dx=m[0]-p[0], dy=m[1]-p[1], L=Math.hypot(dx,dy), maxL=layout.boxes[0].s*.45;
+    if(L>maxL){ dx*=maxL/L; dy*=maxL/L; }
+    state.aim=[dx,dy];
+  });
+  function release(){
+    if(!drag) return; drag=null;
+    var d=state.aim||[0,0], L=Math.hypot(d[0],d[1]), maxL=layout.boxes[0].s*.45;
+    state.aim=null;
+    if(L<8) return;
+    var power=MAXV*L/maxL;
+    shoot(Math.atan2(-d[1],-d[0]), power);
+  }
+  cv.addEventListener('pointerup', release); cv.addEventListener('pointercancel', release);
+  function shoot(angle, power){
+    state.vel=[Math.cos(angle)*power, Math.sin(angle)*power]; state.moving=true; state.shots++;
+    state.trails[state.page].push(null, state.pos.slice()); upd();
+  }
+
+  document.getElementById('reset').onclick=function(){ newLevel(state.level); };
+  el.next.onclick=function(){ newLevel((state.level+1)%LEVELS.length); };
+
+  var lastT=null;
+  function loop(t){
+    if(lastT===null) lastT=t;
+    var dt=Math.min(.05,(t-lastT)/1000); lastT=t;
+    if(state.moving){ var n=8; for(var i=0;i<n && state.moving;i++) step(dt/n); }
+    draw(); requestAnimationFrame(loop);
+  }
+  window.addEventListener('resize', function(){ computeLayout(); });
+  computeLayout(); newLevel(0); requestAnimationFrame(loop);
+  // для автотестов
+  window.__bb={newLevel:newLevel, shoot:shoot, state:function(){ return state; }, step:step, levels:LEVELS};
+})();
+</script>
+</body>
+</html>
